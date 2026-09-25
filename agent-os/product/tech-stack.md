@@ -27,7 +27,6 @@ career-networking/
 | HTTP Client | Axios or fetch | API calls to backend services |
 | PDF Preview | react-pdf | Render PDF previews in-browser |
 | Markdown Editor | react-markdown + textarea | Edit cover letter and resume |
-| Social Sharing | Native Web Share API + fallbacks | X, Facebook, LinkedIn, Email |
 | Icons | Lucide React | Consistent icon set |
 
 ---

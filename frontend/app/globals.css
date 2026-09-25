@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * Career Networking design tokens (light mode only).
+ * This is the single source of truth for colour, radius, shadow and spacing values.
+ * Components use them through Tailwind classes (bg-background, text-muted-foreground,
+ * bg-accent, ring-ring, shadow-soft, ...) and never hard-code hex values.
+ *
+ * WCAG AA contrast (4.5:1 for normal text), verified:
+ *   foreground  #2B2724 on background #FAF7F2 13.85, on surface-alt #F3EDE4 12.72
+ *   muted text  #6B625A on background 5.58, on surface #FFFFFF 5.97, on surface-alt 5.13
+ *   white on accent #B4532A 4.99, white on accent-hover #9A4522 6.46
+ *   accent text #B4532A on background 4.67, on surface 4.99
+ *   destructive #B42318 on background 6.15, on surface 6.57, white on destructive 6.57
+ *   success #5F7A61 on surface 4.73, white on success 4.73
+ *   warning #94621A on surface 5.22, on background 4.89, white on warning 5.22
+ * Adjusted: warning was #B7791F, which fails AA both as text on surface (3.64) and with
+ * white text (3.64), so it was darkened to #94621A.
+ * Avoid: accent text on surface-alt (4.28) and any text on a translucent tint of a colour
+ * token; use solid fills with the matching *-foreground instead.
+ */
+:root {
+  --background: #faf7f2;
+  --foreground: #2b2724;
+
+  --surface: #ffffff;
+  --surface-alt: #f3ede4;
+  --border: #e7dfd3;
+  --muted-foreground: #6b625a;
+
+  --accent: #b4532a;
+  --accent-hover: #9a4522;
+  --accent-foreground: #ffffff;
+
+  --success: #5f7a61;
+  --success-foreground: #ffffff;
+  --warning: #94621a;
+  --warning-foreground: #ffffff;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+
+  --ring: var(--accent);
+  --radius: 0.75rem;
+
+  /* Soft, warm shadows tinted with the foreground colour instead of pure black. */
+  --shadow-soft-sm: 0 1px 2px rgb(43 39 36 / 0.05);
+  --shadow-soft:
+    0 1px 2px rgb(43 39 36 / 0.04), 0 4px 12px rgb(43 39 36 / 0.06);
+  --shadow-soft-lg:
+    0 2px 4px rgb(43 39 36 / 0.04), 0 12px 32px rgb(43 39 36 / 0.1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-alt: var(--surface-alt);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-muted: var(--surface-alt);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+
+  --radius-sm: calc(var(--radius) - 0.25rem);
+  --radius-md: calc(var(--radius) - 0.125rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.25rem);
+
+  --shadow-soft-sm: var(--shadow-soft-sm);
+  --shadow-soft: var(--shadow-soft);
+  --shadow-soft-lg: var(--shadow-soft-lg);
+}
+
+/*
+ * Spacing follows an 8px rhythm on Tailwind's default 4px unit: use even steps
+ * (2 = 8px, 4 = 16px, 6 = 24px, 8 = 32px, ...). Odd steps are reserved for fine
+ * optical adjustments inside components.
+ */
+@theme {
+  --spacing: 0.25rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    /* Resting outline colour matches the ring so colour transitions never flash another hue. */
+    outline-color: var(--ring);
+  }
+
+  html {
+    @apply bg-background font-sans text-foreground antialiased;
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Every interactive element gets a visible accent focus ring for keyboard users. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}

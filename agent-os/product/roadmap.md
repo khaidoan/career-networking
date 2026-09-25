@@ -8,28 +8,28 @@ Establish the project structure, database schema, authentication, and core UI sk
 ### Deliverables
 
 **Infrastructure & DevOps**
-- Monorepo structure: `frontend/` and `backend/` folders
-- Docker Compose setup with services: frontend, jobs (backend), postgres, nginx
-- `.env.local` with all required environment variables
-- Data volume mounts: `backend/data/resume`, `backend/data/jobs`, `backend/logs`
-- `.gitignore` entries for data and log folders
+- [x] Monorepo structure: `frontend/` and `backend/` folders
+- [x] Docker Compose setup with services: frontend, jobs (backend), postgres, nginx
+- [x] `.env` at the repo root with all required environment variables (the only runtime env file, loaded by both compose files), created from the committed `.env.example` template
+- [x] Data volume mounts: `backend/data/resume`, `backend/data/jobs`, `backend/logs`
+- [x] `.gitignore` entries for data and log folders
 
 **Database (PostgreSQL + SQLAlchemy + Alembic)**
-- `preferences` table (desired titles, country, currency, salary, seniority, address, skills, resume location, resume text, hard_skills, soft_skills)
-- `companies` table (id, name, website_url, history, linkedin_url, logo_url, description, industries, growth_stage, liked)
-- `jobs` table (all columns including scoring, inbox_type, source, location, applied_when, discovered_when)
-- `company_networking` table (company_id, first_name, last_name, linkedin_url, title, connection_request_sent)
-- `prompts` table (agent name, system prompt, is_customized)
-- Alembic migrations for all tables
+- [x] `preferences` table (desired titles, country, currency, salary, seniority, address, skills, resume location, resume text, hard_skills, soft_skills)
+- [x] `companies` table (id, name, website_url, history, linkedin_url, logo_url, description, industries, growth_stage, liked)
+- [x] `jobs` table (all columns including scoring, inbox_type, source, location, applied_when, discovered_when)
+- [x] `company_networking` table (company_id, first_name, last_name, linkedin_url, title, connection_request_sent)
+- [x] `prompts` table (agent name, system prompt, is_customized)
+- [x] Alembic migrations for all tables
 
 **Authentication**
-- Login page (JWT, credentials from env vars, no localStorage)
-- Protected routes in Next.js
+- [x] Login page (JWT, credentials from env vars, no localStorage)
+- [x] Protected routes in Next.js
 
 **Frontend Skeleton (Next.js + React)**
-- Top navigation bar (app name link, social share icons, user avatar with initials)
-- Left sidebar navigation (all pages linked)
-- Warm, modern, minimalist design system
+- [x] Top navigation bar (app name link, user avatar with initials)
+- [x] Left sidebar navigation (all pages linked)
+- [x] Warm, modern, minimalist design system
 
 ---
 
