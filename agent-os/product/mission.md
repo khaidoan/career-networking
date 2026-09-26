@@ -46,10 +46,9 @@ Pay-what-you-can after getting a job. No subscription, no SaaS fees, no data har
 
 - Automated job discovery from all job boards supported by Career-Ops
 - AI-powered job evaluation and scoring against user preferences
-- LinkedIn employee discovery for networking outreach
+- LinkedIn employee discovery for networking outreach (button-triggered search; the app never sends connection requests or messages)
 - Clipboard-ready connection request messages
 - AI-assisted tailored resume and cover letter generation (markdown → PDF)
 - Manual apply flow with PDF preview before submission
-- Playwright-assisted LinkedIn connection requests (user-triggered)
 - Customizable AI agent system prompts
 - Single-user JWT authentication (credentials in environment variables)

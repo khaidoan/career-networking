@@ -1,8 +1,10 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Index, Text, false
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TIMESTAMP
 
 from src.models.base import Base, TimestampMixin
 
@@ -34,6 +36,8 @@ class Company(TimestampMixin, Base):
     growth_stage: Mapped[str | None] = mapped_column(Text)
     liked: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     employee_estimate: Mapped[str | None] = mapped_column(Text)
+    # Last successful contact search (display only; there is no cooldown).
+    contacts_searched_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
     # Jobs block company deletion (ON DELETE RESTRICT); let the database enforce it.
     jobs: Mapped[list["Job"]] = relationship(back_populates="company", passive_deletes="all")

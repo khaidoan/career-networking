@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { Wallet } from "lucide-react";
 
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -52,10 +53,18 @@ export function CompensationSection({
   errors,
   onChange,
 }: SectionProps) {
-  function changeCountry(country: string) {
-    const currency = COUNTRY_CURRENCY[country];
-    onChange(currency ? { country, currency } : { country });
-  }
+  // Stable handlers let the memoized country and currency selects skip salary keystrokes.
+  const changeCountry = useCallback(
+    (country: string) => {
+      const currency = COUNTRY_CURRENCY[country];
+      onChange(currency ? { country, currency } : { country });
+    },
+    [onChange],
+  );
+  const changeCurrency = useCallback(
+    (currency: string) => onChange({ currency }),
+    [onChange],
+  );
 
   return (
     <ProfileSection
@@ -79,7 +88,7 @@ export function CompensationSection({
           label="Currency"
           description="Set from the country; change it if you are paid in another currency."
           value={values.currency}
-          onChange={(currency) => onChange({ currency })}
+          onChange={changeCurrency}
           options={CURRENCY_OPTIONS}
           notSetLabel="Choose a currency"
           error={errors.currency}

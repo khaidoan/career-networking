@@ -109,15 +109,15 @@ Display discovered jobs in an actionable inbox interface.
 ## Phase 4: Networking Agent
 
 ### Goals
-Automate discovery of relevant LinkedIn contacts at target companies.
+Find relevant LinkedIn contacts at target companies when the user asks for them. The app never sends LinkedIn connection requests or messages; Phase 3 click-to-connect stays the only way to reach out.
 
 ### Deliverables
 
 **Networking Agent (`networking.py`)**
-- On job fetch, extract company name and skillset from posting
-- Search LinkedIn for employees with matching skills
-- Populate `company_networking` table
-- Playwright-based LinkedIn outreach (user-triggered via UI button)
+- [x] Button-triggered only: a "Find contacts" button on Job Details and Company Details, available for companies with a recommended or applied job (never run by the fetcher or on a schedule)
+- [x] One SerpApi Google search (`site:linkedin.com/in "<company>" "<role title>"`) per click, using the job title without seniority words
+- [x] One LLM call picks up to 5 people from the search results (peers first, at most one hiring manager); the user's hard skills found in the posting are ranking signals
+- [x] Populate `company_networking`, deduplicated by normalized LinkedIn URL; contacts already marked "Request sent" are never changed
 
 ---
 

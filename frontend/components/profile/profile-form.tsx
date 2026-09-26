@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   CircleCheck,
   Loader2,
@@ -89,7 +89,8 @@ export function ProfileForm() {
     setLoadAttempt((attempt) => attempt + 1);
   }
 
-  function update(patch: Partial<ProfileFormValues>) {
+  // Stable (it only uses state setters) so memoized fields can skip unrelated edits.
+  const update = useCallback((patch: Partial<ProfileFormValues>) => {
     setValues((current) => (current ? { ...current, ...patch } : current));
     setSaveStatus({ kind: "idle" });
     // Clear the errors of the fields being edited.
@@ -107,7 +108,7 @@ export function ProfileForm() {
       }
       return next;
     });
-  }
+  }, []);
 
   function handleUploaded(upload: ResumeUpload) {
     setSaved((current) => current && { ...current, resume: upload.resume });

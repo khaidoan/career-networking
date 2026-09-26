@@ -26,6 +26,11 @@ const COMPANY: CompanyDetail = {
   job_count: 0,
   jobs: [],
   contacts: [],
+  contact_search: {
+    available: false,
+    unavailable_reason: "no_eligible_job",
+    last_searched_at: null,
+  },
 };
 
 function json(body: unknown, status = 200) {
@@ -120,6 +125,56 @@ describe("CompanyDetails", () => {
       method: "DELETE",
       credentials: "include",
     });
+  });
+
+  it("finds contacts without a job id and replaces the contact list", async () => {
+    const contact = {
+      id: 12,
+      company_id: 3,
+      name: "Jane Doe",
+      first_name: "Jane",
+      last_name: "Doe",
+      title: "Backend Engineer",
+      linkedin_url: "https://www.linkedin.com/in/jane-doe",
+      connection_request_sent: false,
+      connection_request_sent_at: null,
+    };
+    const available = {
+      ...COMPANY.contact_search,
+      available: true,
+      unavailable_reason: null,
+    };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? json({
+            found: 1,
+            created: 1,
+            updated: 0,
+            contacts: [contact],
+            contact_search: {
+              ...available,
+              last_searched_at: new Date().toISOString(),
+            },
+          })
+        : json({ ...COMPANY, contact_search: available }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderDetails();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Find contacts" }),
+    );
+
+    expect(await screen.findByRole("link", { name: /Jane Doe/ })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/companies/3/contacts/search",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(screen.queryByText("Not searched yet")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /People on LinkedIn/ }),
+    ).toBeVisible();
   });
 
   it("shows a friendly page when the company does not exist", async () => {

@@ -21,6 +21,7 @@ import {
 } from "@/components/common/detail-section";
 import { LoadError } from "@/components/common/list-states";
 import { ContactList } from "@/components/contacts/contact-list";
+import { FindContactsButton } from "@/components/contacts/find-contacts-button";
 import { JobCard } from "@/components/jobs/job-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ import {
   setCompanyLiked,
   type CompanyDetail,
 } from "@/lib/api/companies";
+import type { ContactSearchResult } from "@/lib/api/contacts";
 import type { JobCard as JobCardData } from "@/lib/api/jobs";
 import { linkedInPeopleUrl } from "@/lib/companies/form";
 
@@ -273,7 +275,8 @@ function JobsSection({
 
 /**
  * Company Details: the header with like, edit, delete and the LinkedIn links, then the
- * company's details, its jobs and its contacts (click-to-connect with the newest job's title).
+ * company's details, its jobs and its contacts (Find contacts, and click-to-connect with the
+ * newest job's title).
  */
 export function CompanyDetails({ companyId }: { companyId: number }) {
   const router = useRouter();
@@ -319,6 +322,21 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
         : current,
     );
   }, []);
+
+  // Applied to the current company, so a like or edit saved during the search is kept.
+  const updateContacts = useCallback(
+    ({ contacts, contact_search }: ContactSearchResult) => {
+      setState((current) =>
+        current.status === "ready"
+          ? {
+              status: "ready",
+              company: { ...current.company, contacts, contact_search },
+            }
+          : current,
+      );
+    },
+    [],
+  );
 
   const handleDeleted = useCallback(() => {
     router.push(COMPANIES_PATH);
@@ -384,10 +402,16 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
             description="People at this company who could help with a mock interview or a referral."
             icon={UsersRound}
           >
+            <FindContactsButton
+              companyId={company.id}
+              status={company.contact_search}
+              onFound={updateContacts}
+            />
             <ContactList
               contacts={company.contacts}
               companyName={company.name}
               jobTitle={latestJobTitle}
+              contactSearch={company.contact_search}
             />
           </DetailSection>
         </div>

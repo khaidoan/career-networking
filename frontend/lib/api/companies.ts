@@ -1,6 +1,6 @@
 /** Browser-side calls to the companies API (`/api/v1/companies`). */
 
-import type { Contact } from "@/lib/api/contacts";
+import type { Contact, ContactSearchStatus } from "@/lib/api/contacts";
 import type { JobCard } from "@/lib/api/jobs";
 import {
   jsonBody,
@@ -30,11 +30,12 @@ export type Company = CompanyCard & {
   history: string | null;
 };
 
-/** Company Details: the company, its jobs (newest first) and its contacts. */
+/** Company Details: the company, its jobs (newest first), its contacts and search status. */
 export type CompanyDetail = Company & {
   job_count: number;
   jobs: JobCard[];
   contacts: Contact[];
+  contact_search: ContactSearchStatus;
 };
 
 /** The body of create and update; `PUT` replaces every field. */

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Text, false
+from sqlalchemy import ForeignKey, Index, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TIMESTAMP
 
@@ -15,6 +15,15 @@ class CompanyNetworking(TimestampMixin, Base):
     """A networking contact at a company; deleted together with its company."""
 
     __tablename__ = "company_networking"
+    __table_args__ = (
+        # One row per profile per company (migration 0013); NULL URLs remain allowed.
+        Index(
+            "uq_company_networking_company_id_linkedin_url",
+            "company_id",
+            "linkedin_url",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(

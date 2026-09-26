@@ -44,7 +44,7 @@ The jobs service refuses to start, naming the offending variables, if a required
 
 ### LLM configuration
 
-All AI agents (resume extractor, job evaluator, company lookup) share one model, called through [LiteLLM](https://docs.litellm.ai/docs/providers). Set it in `.env`:
+All AI agents (resume extractor, job evaluator, company lookup, networking) share one model, called through [LiteLLM](https://docs.litellm.ai/docs/providers). Set it in `.env`:
 
 | Variable | Required | Meaning |
 |---|---|---|
@@ -95,7 +95,20 @@ The job fetcher can search Google Jobs, which surfaces listings from LinkedIn, I
 
 4. Restart the stack so the services pick up the new values.
 
-Each interval, Google Jobs is searched for every desired job title (set on the Profile page) in your preferred country, fetching up to 3 result pages per title. Each result page counts as one SerpApi search. At the default once a day that is about 30 searches per title per month for each result page, so keep titles × pages × runs within your plan (250 on the free plan) before adding titles or shortening the interval. Searches SerpApi serves from its cache, and failed searches, do not count toward the quota.
+Each interval, Google Jobs is searched for every desired job title (set on the Profile page) in your preferred country, fetching up to 3 result pages per title. Each result page counts as one SerpApi search. At the default once a day that is about 30 searches per title per month for each result page, so keep titles × pages × runs within your plan (250 on the free plan) before adding titles or shortening the interval. Searches SerpApi serves from its cache, and failed searches, do not count toward the quota. [Contact search](#contact-search-optional) uses the same key and the same monthly quota.
+
+### Contact search (optional)
+
+Job Details (in the Networking / Outreach section) and Company Details (in the Contacts section) have a **Find contacts** button that looks for people at the company on LinkedIn who could help with a mock interview or a referral.
+
+- **It needs `SERPAPI_API_KEY`**, the same key as [Google Jobs](#google-jobs-optional). Set it in `.env` as described there and restart the stack. Without it the button is disabled and says a SerpApi key is needed.
+- **It only runs when you click.** The button is available for companies with at least one job in the Recommended or Applied inbox. The fetcher never searches for contacts, and nothing runs on a schedule.
+- **Each click is one SerpApi search** (a Google search for `site:linkedin.com/in "<company>" "<role title>"`, where the role title is the job title without words such as Senior or II) plus one call to your AI model, which picks up to 5 people from the results: peers in the same or a close role first, and at most one hiring manager or team lead. There is no daily cap and no cooldown, and every click counts toward the same monthly SerpApi quota as Google Jobs (250 searches on the free plan).
+- **Results come from Google and may be out of date.** Names, titles and profile links are taken from Google's search results, not from LinkedIn itself, so someone may have changed role or left the company. The page shows when the company was last searched.
+- **Searching again is safe.** People already in the list are matched by their LinkedIn profile URL (or, for contacts without one, by name). Their title is updated if Google shows a newer one, but "Request sent" and its date are never changed, and no contact is ever deleted.
+- **The app never sends LinkedIn connection requests or messages**, and it never signs in to LinkedIn. To reach out, select a contact's name: it opens their profile in a new tab and copies a connection message for you to paste and send yourself. The People on LinkedIn link on the page is a manual fallback for browsing the company's people tab.
+
+The AI model sees the company name, the job title, the search results (result title and snippet) and your hard skills; nothing else from your profile is sent. If SerpApi or the model fails, nothing is saved and the page shows the error; try again later.
 
 ## Running
 

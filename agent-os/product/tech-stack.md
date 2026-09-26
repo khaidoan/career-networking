@@ -42,7 +42,7 @@ career-networking/
 | AI Orchestration | LangGraph | Agent graphs (prepare_job, apply, etc.) |
 | LLM Abstraction | LiteLLM | Works with OpenAI, Anthropic, local models |
 | Job Scraping | Career-Ops compatible scrapers | All job boards/ATS Career-Ops supports |
-| Browser Automation | Playwright | LinkedIn outreach (user-triggered) |
+| Browser Automation | Playwright | Phase 5 Apply flow only (not yet a backend dependency). Never used for LinkedIn |
 | PDF Generation | WeasyPrint or reportlab | Convert markdown → PDF |
 | Resume Parsing | python-docx + PyPDF2/pdfminer | Extract text from .docx and .pdf |
 | Task Scheduling | Docker Compose + cron | Runs fetcher.py once a day (06:00 UTC) |
@@ -141,6 +141,6 @@ Must support all job boards and ATS platforms currently supported by Career-Ops,
 | Resume Reviewer | `backend/jobs/src/agents/resume_reviewer.py` | Review and improve tailored resume |
 | Prepare Job | `backend/jobs/src/agents/prepare_job.py` | LangGraph graph: orchestrates cover letter + resume pipeline |
 | Apply | `backend/jobs/src/agents/apply.py` | Playwright-based job application (future) |
-| Networking | `backend/jobs/src/agents/networking.py` | Find LinkedIn contacts at target companies |
+| Networking | `backend/jobs/src/agents/networking.py` | Find LinkedIn contacts at a company on request (one SerpApi search + one LLM selection); never sends anything to LinkedIn |
 
 Each agent defines a `{AGENT_NAME}_SYSTEM_PROMPT` constant. Prompts are stored in the `prompts` table; if not customized, the constant is used as fallback.

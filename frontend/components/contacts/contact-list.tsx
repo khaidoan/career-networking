@@ -5,7 +5,11 @@ import { CircleCheck, ExternalLink, UsersRound } from "lucide-react";
 
 import { CopyMessageDialog } from "@/components/contacts/copy-message-dialog";
 import { useAnnounce } from "@/components/ui/announcer";
-import { markConnectionRequestSent, type Contact } from "@/lib/api/contacts";
+import {
+  markConnectionRequestSent,
+  type Contact,
+  type ContactSearchStatus,
+} from "@/lib/api/contacts";
 import { copyText } from "@/lib/outreach/clipboard";
 import { buildConnectionMessage } from "@/lib/outreach/message";
 
@@ -21,6 +25,8 @@ type ContactListProps = {
    * nothing is copied and the contact is not marked as sent.
    */
   jobTitle: string | null;
+  /** Picks the empty-state text: a prompt to use Find contacts, or why it is unavailable. */
+  contactSearch?: ContactSearchStatus;
 };
 
 type ContactItemProps = {
@@ -57,8 +63,14 @@ function ContactItem({
   onCopyFailed,
 }: ContactItemProps) {
   const announce = useAnnounce();
-  const [saved, setSaved] = useState<Contact | null>(null);
-  const contact = saved ?? initialContact;
+  // The saved copy only applies to the contact it was saved from, so a list refreshed by a
+  // contact search (with possibly newer titles) is shown as received.
+  const [saved, setSaved] = useState<{
+    from: Contact;
+    contact: Contact;
+  } | null>(null);
+  const contact =
+    saved && saved.from === initialContact ? saved.contact : initialContact;
   const name = displayName(contact);
 
   function connect() {
@@ -81,7 +93,7 @@ function ContactItem({
     });
     void markConnectionRequestSent(contact.id).then((result) => {
       if (result.ok) {
-        setSaved(result.contact);
+        setSaved({ from: initialContact, contact: result.contact });
       } else {
         announce(
           `Could not mark the request to ${name} as sent. ${result.message}`,
@@ -121,14 +133,30 @@ function ContactItem({
   );
 }
 
+function emptyStateText(
+  companyName: string,
+  contactSearch: ContactSearchStatus | undefined,
+): string {
+  if (contactSearch && !contactSearch.available) {
+    return contactSearch.unavailable_reason === "no_api_key"
+      ? `Contacts at ${companyName} can be found once a SerpApi key is set up.`
+      : `Contacts at ${companyName} can be found once one of its jobs is recommended or applied to.`;
+  }
+  if (contactSearch?.last_searched_at) {
+    return `The last search found no one at ${companyName}. Select Find contacts to try again.`;
+  }
+  return `Select Find contacts to look for people at ${companyName} on LinkedIn.`;
+}
+
 /**
  * A company's networking contacts with click-to-connect, or an empty state. Used on Job
- * Details and Company Details.
+ * Details and Company Details. Nothing here sends anything to LinkedIn.
  */
 export function ContactList({
   contacts,
   companyName,
   jobTitle,
+  contactSearch,
 }: ContactListProps) {
   const hintId = useId();
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
@@ -142,8 +170,7 @@ export function ContactList({
         />
         <p className="font-medium text-foreground">No contacts yet</p>
         <p className="max-w-md text-sm text-muted-foreground">
-          People to reach out to at {companyName} will appear here once contact
-          discovery arrives in a later phase.
+          {emptyStateText(companyName, contactSearch)}
         </p>
       </div>
     );
@@ -151,6 +178,9 @@ export function ContactList({
 
   return (
     <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        Found via search, may be out of date.
+      </p>
       <p id={hintId} className="text-sm text-muted-foreground">
         {jobTitle === null
           ? "Selecting a name opens their LinkedIn profile."

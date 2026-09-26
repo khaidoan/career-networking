@@ -1,10 +1,12 @@
 """Response models for networking contacts (``company_networking`` rows)."""
 
 from datetime import datetime
+from typing import Literal, Self
 
 from pydantic import BaseModel
 
 from src.models import CompanyNetworking
+from src.services.contacts import ContactSearchAvailability
 
 
 class ContactRead(BaseModel):
@@ -33,3 +35,25 @@ class ContactRead(BaseModel):
             connection_request_sent=contact.connection_request_sent,
             connection_request_sent_at=contact.connection_request_sent_at,
         )
+
+
+class ContactSearchStatus(BaseModel):
+    """Whether "Find contacts" can run; ``unavailable_reason`` is null when it can."""
+
+    available: bool
+    unavailable_reason: Literal["no_api_key", "no_eligible_job"] | None
+    last_searched_at: datetime | None
+
+    @classmethod
+    def from_availability(cls, availability: ContactSearchAvailability) -> Self:
+        return cls.model_validate(availability, from_attributes=True)
+
+
+class ContactSearchResult(BaseModel):
+    """One successful contact search: counts, the company's contacts and the new status."""
+
+    found: int
+    created: int
+    updated: int
+    contacts: list[ContactRead]
+    contact_search: ContactSearchStatus

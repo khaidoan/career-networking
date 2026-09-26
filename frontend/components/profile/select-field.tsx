@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,8 +27,14 @@ type SelectFieldProps = {
   error?: string;
 };
 
-/** Labelled single-choice Select; an empty string means "not set". */
-export function SelectField({
+/**
+ * Labelled single-choice Select; an empty string means "not set".
+ *
+ * Memoized because Radix renders every item even while closed, and the country and currency
+ * lists hold hundreds of them: without it, each keystroke elsewhere in the Profile form
+ * re-rendered them all. Pass a stable `onChange` (e.g. from `useCallback`) to benefit.
+ */
+export const SelectField = memo(function SelectField({
   id,
   label,
   value,
@@ -78,4 +86,4 @@ export function SelectField({
       )}
     </div>
   );
-}
+});

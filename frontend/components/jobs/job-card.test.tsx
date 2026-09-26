@@ -108,6 +108,11 @@ describe("JobCard", () => {
         history: null,
       },
       contacts: [],
+      contact_search: {
+        available: true,
+        unavailable_reason: null,
+        last_searched_at: null,
+      },
     };
     let finish: (response: Response) => void = () => {};
     vi.stubGlobal(

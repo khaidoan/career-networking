@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field
 
-from src.api.v1.schemas.contacts import ContactRead
+from src.api.v1.schemas.contacts import ContactRead, ContactSearchStatus
 from src.api.v1.schemas.job_card import JobCard
 from src.models import Company
 from src.tags import normalize_tags
@@ -139,6 +139,7 @@ class CompanyDetail(CompanyRead):
     job_count: int
     jobs: list[JobCard]
     contacts: list[ContactRead]
+    contact_search: ContactSearchStatus
 
 
 class CompanyList(BaseModel):

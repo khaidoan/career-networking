@@ -1,7 +1,7 @@
 /** Browser-side calls to the jobs API (`/api/v1/jobs`): inboxes, Job Details and job actions. */
 
 import type { Company } from "@/lib/api/companies";
-import type { Contact } from "@/lib/api/contacts";
+import type { Contact, ContactSearchStatus } from "@/lib/api/contacts";
 import {
   jsonBody,
   requestJson,
@@ -43,7 +43,10 @@ export type JobCard = {
   applied_when: string | null;
 };
 
-/** One job with its full text, all four scores, its company and the company's contacts. */
+/**
+ * One job with its full text, all four scores, its company, the company's contacts and whether
+ * a contact search can run for that company.
+ */
 export type JobDetail = JobCard & {
   url: string;
   source: string | null;
@@ -53,6 +56,7 @@ export type JobDetail = JobCard & {
   industry_exp_score: number | null;
   company: Company;
   contacts: Contact[];
+  contact_search: ContactSearchStatus;
 };
 
 /** Inbox filters, named after their query parameters (empty values are not sent). */

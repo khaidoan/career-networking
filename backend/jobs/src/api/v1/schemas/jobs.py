@@ -5,7 +5,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict
 
 from src.api.v1.schemas.companies import CompanyRead
-from src.api.v1.schemas.contacts import ContactRead
+from src.api.v1.schemas.contacts import ContactRead, ContactSearchStatus
 from src.api.v1.schemas.job_card import JobCard
 from src.models import Company, CompanyNetworking, Job
 
@@ -21,10 +21,15 @@ class JobDetail(JobCard):
     industry_exp_score: int | None
     company: CompanyRead
     contacts: list[ContactRead]
+    contact_search: ContactSearchStatus
 
     @classmethod
     def from_model(
-        cls, job: Job, company: Company, contacts: list[CompanyNetworking] | None = None
+        cls,
+        job: Job,
+        company: Company,
+        contacts: list[CompanyNetworking],
+        contact_search: ContactSearchStatus,
     ) -> Self:
         return cls.model_validate(
             {
@@ -36,7 +41,8 @@ class JobDetail(JobCard):
                 "skill_score": job.skill_score,
                 "industry_exp_score": job.industry_exp_score,
                 "company": CompanyRead.from_model(company),
-                "contacts": [ContactRead.from_model(contact) for contact in contacts or []],
+                "contacts": [ContactRead.from_model(contact) for contact in contacts],
+                "contact_search": contact_search,
             }
         )
 

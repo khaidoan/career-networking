@@ -112,6 +112,53 @@ describe("ContactList", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("notes that contacts may be out of date, and prompts a search when empty", () => {
+    const { rerender } = render(
+      <ContactList contacts={[CONTACT]} companyName="Acme" jobTitle={null} />,
+    );
+    expect(
+      screen.getByText("Found via search, may be out of date."),
+    ).toBeVisible();
+
+    rerender(
+      <ContactList
+        contacts={[]}
+        companyName="Acme"
+        jobTitle={null}
+        contactSearch={{
+          available: true,
+          unavailable_reason: null,
+          last_searched_at: null,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Select Find contacts to look for people at Acme on LinkedIn.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Found via search, may be out of date."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/later phase/)).not.toBeInTheDocument();
+
+    rerender(
+      <ContactList
+        contacts={[]}
+        companyName="Acme"
+        jobTitle={null}
+        contactSearch={{
+          available: false,
+          unavailable_reason: "no_eligible_job",
+          last_searched_at: null,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(/once one of its jobs is recommended or applied to/),
+    ).toBeVisible();
+  });
+
   it("only opens LinkedIn when there is no job to mention", async () => {
     const { user, writeText, fetchMock, link } = setup(null);
 

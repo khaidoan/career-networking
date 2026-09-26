@@ -50,6 +50,11 @@ const JOB: JobDetail = {
     history: null,
   },
   contacts: [],
+  contact_search: {
+    available: true,
+    unavailable_reason: null,
+    last_searched_at: null,
+  },
 };
 
 function json(body: unknown, status = 200) {
@@ -193,6 +198,76 @@ describe("JobDetails", () => {
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
     expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
       "Backend Engineer marked as applied and moved to Applied.",
+    );
+  });
+
+  it("replaces the contacts and search status with the Find contacts response", async () => {
+    const contact = {
+      id: 11,
+      company_id: 3,
+      name: "Jane Doe",
+      first_name: "Jane",
+      last_name: "Doe",
+      title: "Backend Engineer",
+      linkedin_url: "https://www.linkedin.com/in/jane-doe",
+      connection_request_sent: false,
+      connection_request_sent_at: null,
+    };
+    const searchedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve(
+          json({
+            found: 1,
+            created: 1,
+            updated: 0,
+            contacts: [contact],
+            contact_search: {
+              available: true,
+              unavailable_reason: null,
+              last_searched_at: searchedAt,
+            },
+          }),
+        );
+      }
+      return Promise.resolve(
+        json({
+          ...JOB,
+          company: {
+            ...JOB.company,
+            linkedin_url: "https://www.linkedin.com/company/acme/",
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderDetails();
+
+    const section = within(
+      await screen.findByRole("region", { name: "Networking / Outreach" }),
+    );
+    expect(section.getByText("Not searched yet")).toBeVisible();
+    expect(section.getByText(/Select Find contacts/)).toBeVisible();
+    expect(
+      section.getByRole("link", { name: /People on LinkedIn/ }),
+    ).toHaveAttribute("href", "https://www.linkedin.com/company/acme/people/");
+
+    await user.click(section.getByRole("button", { name: "Find contacts" }));
+
+    expect(
+      await section.findByRole("link", { name: /Jane Doe/ }),
+    ).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/companies/3/contacts/search?job_id=7",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(
+      section.getByText("1 hour ago", { selector: "time" }),
+    ).toHaveAttribute("dateTime", searchedAt);
+    expect(section.queryByText("Not searched yet")).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
+      "Found 1 new contact.",
     );
   });
 

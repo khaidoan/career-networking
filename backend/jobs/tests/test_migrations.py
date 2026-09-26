@@ -25,6 +25,9 @@ EXPECTED_REVISION_ORDER = [
     "create_ats_boards_table",
     "add_jobs_evaluation_error",
     "add_companies_name_trigram_index",
+    "add_companies_contacts_searched_at",
+    "normalize_company_networking_linkedin_urls",
+    "add_company_networking_linkedin_url_unique_index",
 ]
 
 
@@ -159,5 +162,125 @@ def test_downgrade_from_head_to_phase_one_schema_restores_skills(alembic_config:
         assert "skills" in columns
         assert columns["seniority"] == "TEXT"
         assert "ats_boards" not in _table_names()
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def _company_columns() -> dict[str, dict]:
+    engine = create_engine(get_settings().sqlalchemy_database_url)
+    try:
+        columns = inspect(engine).get_columns("companies")
+        return {column["name"]: column for column in columns}
+    finally:
+        engine.dispose()
+
+
+def _insert_contact(
+    company_id: int, url: str | None, *, sent: bool = False, sent_at: str | None = None
+) -> int:
+    rows = _execute_params(
+        "INSERT INTO company_networking "
+        "(company_id, linkedin_url, connection_request_sent, connection_request_sent_at) "
+        "VALUES (:company_id, :url, :sent, CAST(:sent_at AS timestamptz)) RETURNING id",
+        {"company_id": company_id, "url": url, "sent": sent, "sent_at": sent_at},
+    )
+    return rows[0][0]
+
+
+def _execute_params(sql: str, params: dict) -> list[tuple]:
+    engine = create_engine(get_settings().sqlalchemy_database_url)
+    try:
+        with engine.begin() as connection:
+            result = connection.execute(text(sql), params)
+            return [tuple(row) for row in result] if result.returns_rows else []
+    finally:
+        engine.dispose()
+
+
+def _contacts() -> list[tuple]:
+    return _execute(
+        "SELECT id, company_id, linkedin_url FROM company_networking ORDER BY company_id, id"
+    )
+
+
+def test_contacts_searched_at_column_is_added_and_removed(alembic_config: Config) -> None:
+    command.upgrade(alembic_config, "head")
+    try:
+        column = _company_columns()["contacts_searched_at"]
+        assert column["nullable"] is True
+        assert "TIMESTAMP" in str(column["type"]) and column["type"].timezone is True
+
+        command.downgrade(alembic_config, "0010")
+        assert "contacts_searched_at" not in _company_columns()
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_linkedin_url_migration_normalizes_variants_and_keeps_the_earliest_sent_row(
+    alembic_config: Config,
+) -> None:
+    command.upgrade(alembic_config, "0011")
+    try:
+        _execute("INSERT INTO companies (id, name) VALUES (1, 'Acme'), (2, 'Globex')")
+        first = _insert_contact(1, "https://www.linkedin.com/in/Ada-L/")
+        later_sent = _insert_contact(
+            1, "http://uk.linkedin.com/in/ada-l?trk=x", sent=True, sent_at="2026-09-02"
+        )
+        earliest_sent = _insert_contact(
+            1, "https://LinkedIn.com/in/ada-l#about", sent=True, sent_at="2026-09-01"
+        )
+        _insert_contact(1, "https://de.linkedin.com/in/ada-l")
+        other_company = _insert_contact(2, "https://www.linkedin.com/in/ada-l")
+        # No sent rows: the lowest id is kept.
+        grace_low = _insert_contact(1, "https://www.linkedin.com/in/grace/")
+        _insert_contact(1, "https://fr.linkedin.com/in/grace?x=1")
+        # Not a profile path: left unchanged, but exact duplicates are still merged.
+        company_page = _insert_contact(1, "https://www.linkedin.com/company/Acme")
+        _insert_contact(1, "https://www.linkedin.com/company/Acme")
+        no_url_a = _insert_contact(1, None)
+        no_url_b = _insert_contact(1, None)
+
+        command.upgrade(alembic_config, "0012")
+
+        # The kept row is neither the lowest id nor the first sent row inserted.
+        assert first < later_sent < earliest_sent
+        assert _contacts() == [
+            (earliest_sent, 1, "https://www.linkedin.com/in/ada-l"),
+            (grace_low, 1, "https://www.linkedin.com/in/grace"),
+            (company_page, 1, "https://www.linkedin.com/company/Acme"),
+            (no_url_a, 1, None),
+            (no_url_b, 1, None),
+            (other_company, 2, "https://www.linkedin.com/in/ada-l"),
+        ]
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_linkedin_url_unique_index_rejects_duplicates_but_allows_null_urls(
+    alembic_config: Config,
+) -> None:
+    command.upgrade(alembic_config, "head")
+    try:
+        _execute("INSERT INTO companies (id, name) VALUES (1, 'Acme')")
+        _insert_contact(1, "https://www.linkedin.com/in/ada")
+        _insert_contact(1, None)
+        _insert_contact(1, None)
+        with pytest.raises(IntegrityError):
+            _insert_contact(1, "https://www.linkedin.com/in/ada")
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_phase_four_migrations_round_trip(alembic_config: Config) -> None:
+    command.upgrade(alembic_config, "head")
+    try:
+        _execute("INSERT INTO companies (id, name) VALUES (1, 'Acme')")
+        _insert_contact(1, "https://www.linkedin.com/in/ada")
+
+        command.downgrade(alembic_config, "0010")
+        command.upgrade(alembic_config, "head")
+
+        assert _contacts()[0][2] == "https://www.linkedin.com/in/ada"
+        assert "contacts_searched_at" in _company_columns()
     finally:
         command.downgrade(alembic_config, "base")

@@ -1,6 +1,6 @@
 """Dependencies and helpers shared by the jobs, companies and contacts routers."""
 
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from typing import Annotated, Any
 
 from fastapi import Depends, Query
@@ -18,9 +18,18 @@ from src.services.paging import (
     SortKey,
     keyset_page,
 )
+from src.sources.providers.base import HttpClient, create_http_client
+
+
+def get_http_client() -> Iterator[HttpClient]:
+    """An outbound HTTP client for one request (tests override it with a mock transport)."""
+    with create_http_client() as client:
+        yield client
+
 
 DbSession = Annotated[Session, Depends(get_db)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
+OutboundHttp = Annotated[HttpClient, Depends(get_http_client)]
 PageLimit = Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)]
 PageCursor = Annotated[str | None, Query(max_length=MAX_CURSOR_LENGTH)]
 PAGE_SIZE = DEFAULT_PAGE_SIZE

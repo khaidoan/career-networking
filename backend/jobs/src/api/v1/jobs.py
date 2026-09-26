@@ -19,9 +19,12 @@ from src.api.v1.common import (
     fetch_page,
     one_of,
 )
+from src.api.v1.schemas.contacts import ContactSearchStatus
 from src.api.v1.schemas.job_card import JobCard
 from src.api.v1.schemas.jobs import JobDetail, JobList, JobPatch
+from src.config import Settings
 from src.models import INBOX_TYPES, Company, Job, Preferences
+from src.services.contacts import contact_search_availability
 from src.services.evaluation import (
     apply_evaluation_failure,
     apply_evaluation_success,
@@ -111,29 +114,34 @@ def _load_job(session: Session, job_id: int) -> Job:
     return job
 
 
-def _to_detail(job: Job) -> JobDetail:
+def _to_detail(session: Session, settings: Settings, job: Job) -> JobDetail:
     contacts = sorted(job.company.networking_contacts, key=lambda contact: contact.id)
-    return JobDetail.from_model(job, job.company, contacts)
+    contact_search = ContactSearchStatus.from_availability(
+        contact_search_availability(session, settings, job.company)
+    )
+    return JobDetail.from_model(job, job.company, contacts, contact_search)
 
 
 @router.get("/{job_id}")
-def get_job(job_id: int, session: DbSession) -> JobDetail:
-    """The job with its company and the company's networking contacts."""
-    return _to_detail(_load_job(session, job_id))
+def get_job(job_id: int, session: DbSession, settings: AppSettings) -> JobDetail:
+    """The job with its company, the company's networking contacts and contact search status."""
+    return _to_detail(session, settings, _load_job(session, job_id))
 
 
 @router.patch("/{job_id}")
-def update_job(job_id: int, patch: JobPatch, session: DbSession) -> JobDetail:
+def update_job(
+    job_id: int, patch: JobPatch, session: DbSession, settings: AppSettings
+) -> JobDetail:
     """Like or unlike a job; nothing else is editable."""
     job = _load_job(session, job_id)
     job.liked = patch.liked
     session.commit()
     logger.info("Job %d liked=%s", job_id, patch.liked)
-    return _to_detail(job)
+    return _to_detail(session, settings, job)
 
 
 @router.post("/{job_id}/apply")
-def apply_to_job(job_id: int, session: DbSession) -> JobDetail:
+def apply_to_job(job_id: int, session: DbSession, settings: AppSettings) -> JobDetail:
     """Move the job to Applied; calling it again keeps the first ``applied_when``."""
     job = _load_job(session, job_id)
     job.inbox_type = INBOX_APPLIED
@@ -141,7 +149,7 @@ def apply_to_job(job_id: int, session: DbSession) -> JobDetail:
         job.applied_when = datetime.now(UTC)
     session.commit()
     logger.info("Job %d marked as applied", job_id)
-    return _to_detail(job)
+    return _to_detail(session, settings, job)
 
 
 @router.post("/{job_id}/re-evaluate")
@@ -166,4 +174,4 @@ def re_evaluate_job(job_id: int, session: DbSession, settings: AppSettings) -> J
     logger.info(
         "Job %d re-evaluated: inbox=%s scored=%s", job_id, job.inbox_type, not job.evaluation_error
     )
-    return _to_detail(job)
+    return _to_detail(session, settings, job)

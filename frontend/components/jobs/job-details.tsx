@@ -7,6 +7,7 @@ import {
   Building2,
   ChartColumn,
   CircleAlert,
+  ExternalLink,
   FileText,
   RotateCw,
   SearchX,
@@ -19,6 +20,7 @@ import {
   DetailSection,
 } from "@/components/common/detail-section";
 import { ContactList } from "@/components/contacts/contact-list";
+import { FindContactsButton } from "@/components/contacts/find-contacts-button";
 import { ApplyAction } from "@/components/jobs/apply-action";
 import {
   MatchStrengthBadge,
@@ -29,7 +31,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useOptimisticLike } from "@/hooks/use-optimistic-like";
+import type { ContactSearchResult } from "@/lib/api/contacts";
 import { getJob, setJobLiked, type JobDetail } from "@/lib/api/jobs";
+import { linkedInPeopleUrl } from "@/lib/companies/form";
 import { formatLocation, formatYearsExperience } from "@/lib/jobs/format";
 import { INBOX_LABELS, INBOX_PATHS } from "@/lib/jobs/inbox";
 import {
@@ -197,6 +201,55 @@ function CompanySection({ job }: { job: JobDetail }) {
   );
 }
 
+function NetworkingSection({
+  job,
+  onContactsFound,
+}: {
+  job: JobDetail;
+  onContactsFound: (result: ContactSearchResult) => void;
+}) {
+  const { company } = job;
+  return (
+    <DetailSection
+      id="networking"
+      title="Networking / Outreach"
+      description="People at this company who could help with a mock interview or a referral."
+      icon={UsersRound}
+    >
+      <FindContactsButton
+        companyId={company.id}
+        jobId={job.id}
+        status={job.contact_search}
+        onFound={onContactsFound}
+      />
+      <ContactList
+        contacts={job.contacts}
+        companyName={company.name}
+        jobTitle={job.title}
+        contactSearch={job.contact_search}
+      />
+      {company.linkedin_url && (
+        <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Browse people at {company.name} on LinkedIn yourself.
+          </p>
+          <Button asChild variant="outline" className="self-start sm:self-auto">
+            <a
+              href={linkedInPeopleUrl(company.linkedin_url)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              People on LinkedIn
+              <ExternalLink aria-hidden="true" />
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          </Button>
+        </div>
+      )}
+    </DetailSection>
+  );
+}
+
 function JobHeader({
   job,
   onChange,
@@ -272,7 +325,8 @@ function JobHeader({
 
 /**
  * Job Details: the header with Apply, the scores, the description with Re-evaluate, the
- * company and its contacts (click-to-connect). A missing job shows a friendly not-found page.
+ * company and its contacts (Find contacts and click-to-connect). A missing job shows a friendly
+ * not-found page.
  */
 export function JobDetails({ jobId }: { jobId: number }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -301,6 +355,21 @@ export function JobDetails({ jobId }: { jobId: number }) {
   const update = useCallback((job: JobDetail) => {
     setState({ status: "ready", job });
   }, []);
+
+  // Applied to the current job, so a like or apply saved during the search is kept.
+  const updateContacts = useCallback(
+    ({ contacts, contact_search }: ContactSearchResult) => {
+      setState((current) =>
+        current.status === "ready"
+          ? {
+              status: "ready",
+              job: { ...current.job, contacts, contact_search },
+            }
+          : current,
+      );
+    },
+    [],
+  );
 
   if (state.status === "loading") {
     return (
@@ -358,18 +427,7 @@ export function JobDetails({ jobId }: { jobId: number }) {
         </div>
         <div className="flex min-w-0 flex-col gap-6">
           <CompanySection job={job} />
-          <DetailSection
-            id="networking"
-            title="Networking / Outreach"
-            description="People at this company who could help with a mock interview or a referral."
-            icon={UsersRound}
-          >
-            <ContactList
-              contacts={job.contacts}
-              companyName={job.company.name}
-              jobTitle={job.title}
-            />
-          </DetailSection>
+          <NetworkingSection job={job} onContactsFound={updateContacts} />
         </div>
       </div>
     </div>

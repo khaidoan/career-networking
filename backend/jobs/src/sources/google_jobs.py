@@ -20,20 +20,21 @@ from src.sources.filters import SearchCriteria
 from src.sources.html_text import html_to_text
 from src.sources.providers import detect_board_ref, get_provider
 from src.sources.providers.base import BoardRef, HttpClient, Posting, SourceError
+from src.sources.serpapi import NO_RESULTS_ERROR as NO_RESULTS_ERROR
+from src.sources.serpapi import SEARCH_TIMEOUT_SECONDS as SEARCH_TIMEOUT_SECONDS
+from src.sources.serpapi import SERPAPI_SEARCH_URL as SERPAPI_SEARCH_URL
+from src.sources.serpapi import SerpApiError, serpapi_search
 from src.sources.state import FetcherState
 from src.vocabularies import COUNTRIES
 
 logger = logging.getLogger(__name__)
 
-SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
 DUE_GRACE = timedelta(hours=1)
 # Keep in sync with the "Google Jobs (optional)" section of the README.
 MAX_PAGES_PER_TITLE = 3
 SEARCH_LANGUAGE = "en"
-SEARCH_TIMEOUT_SECONDS = 60.0
 # Google's country codes differ from ISO 3166-1 for a few countries.
 GOOGLE_COUNTRY_CODES = {"GB": "uk"}
-NO_RESULTS_ERROR = "hasn't returned any results"
 
 # A description shorter than this, or ending in an ellipsis, is treated as a truncated snippet.
 MIN_FULL_DESCRIPTION_CHARS = 300
@@ -122,27 +123,18 @@ def _search_title(
 ) -> list[dict]:
     """Raw ``jobs_results`` for one title across up to ``MAX_PAGES_PER_TITLE`` pages."""
     params = {
-        "engine": "google_jobs",
         "q": title,
         "location": serpapi_location(country),
         "gl": GOOGLE_COUNTRY_CODES.get(country, country.lower()),
         "hl": SEARCH_LANGUAGE,
-        "api_key": api_key,
     }
     results: list[dict] = []
     for _page in range(MAX_PAGES_PER_TITLE):
         try:
-            data = client.get_json(
-                SERPAPI_SEARCH_URL, params=params, timeout=SEARCH_TIMEOUT_SECONDS
-            )
-        except SourceError as error:
+            data = serpapi_search(client, api_key=api_key, engine="google_jobs", params=params)
+        except SerpApiError as error:
             result.failed_searches += 1
             logger.warning("Google Jobs search failed: %s", error)
-            break
-        error_message = data.get("error") if isinstance(data, dict) else "unexpected response"
-        if error_message and NO_RESULTS_ERROR not in str(error_message):
-            result.failed_searches += 1
-            logger.warning("Google Jobs search failed: %s", error_message)
             break
         result.searches += 1
         page_results = data.get("jobs_results") or []

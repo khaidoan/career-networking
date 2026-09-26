@@ -51,6 +51,9 @@ function tagList(label: string) {
 }
 
 describe("ProfileForm", () => {
+  // The first test in this file pays the cold first mount of the whole form, whose Country and
+  // Currency selects hold ~400 Radix items. That takes ~0.7s alone but ~2.5s when the full suite
+  // runs in parallel, so the 5s default left little headroom; 10s keeps a real hang visible.
   it("saves an edited field with PUT and confirms the save", async () => {
     const saved: Preferences = {
       ...EMPTY_PREFERENCES,
@@ -89,7 +92,7 @@ describe("ProfileForm", () => {
     expect(
       screen.queryByText("Job discovery is paused"),
     ).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("merges resume suggestions into the tag inputs and asks for a review", async () => {
     mockApi({
