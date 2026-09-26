@@ -7,9 +7,12 @@ from typing import Any
 
 import httpx
 import pytest
+from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from src.config import Settings, get_settings
 from src.main import create_app
@@ -80,6 +83,18 @@ def alembic_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[
     get_settings.cache_clear()
     yield Config(str(ALEMBIC_INI))
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def migrated_sessions(alembic_config: Config) -> Iterator[sessionmaker[Session]]:
+    """Sessions on the disposable Postgres migrated to head; downgraded to base afterwards."""
+    command.upgrade(alembic_config, "head")
+    engine = create_engine(get_settings().sqlalchemy_database_url)
+    try:
+        yield sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    finally:
+        engine.dispose()
+        command.downgrade(alembic_config, "base")
 
 
 class FakeLlm:

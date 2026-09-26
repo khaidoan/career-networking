@@ -18,6 +18,28 @@ export const SENIORITY_OPTIONS: readonly Option[] = [
   { value: "vp_plus", label: "VP and above" },
 ];
 
+export const WORK_ARRANGEMENT_OPTIONS: readonly Option[] = [
+  { value: "remote", label: "Remote" },
+  { value: "hybrid", label: "Hybrid" },
+  { value: "onsite", label: "On-site" },
+];
+
+export const JOB_TYPE_OPTIONS: readonly Option[] = [
+  { value: "full_time", label: "Full-time" },
+  { value: "part_time", label: "Part-time" },
+  { value: "contract", label: "Contract" },
+  { value: "internship", label: "Internship" },
+  { value: "temporary", label: "Temporary" },
+];
+
+/** The label for a stored slug, or `null` when the value is missing or not in the list. */
+export function optionLabel(
+  options: readonly Option[],
+  value: string | null | undefined,
+): string | null {
+  return options.find((option) => option.value === value)?.label ?? null;
+}
+
 export const GENDER_OPTIONS: readonly Option[] = [
   { value: "female", label: "Female" },
   { value: "male", label: "Male" },

@@ -4,18 +4,30 @@
  * `credentials: "include"` and every call resolves to a typed result instead of throwing.
  */
 
-import { NETWORK_ERROR_MESSAGE } from "@/lib/auth/client";
 import type { EeoQuestionKey } from "@/lib/profile/options";
+import {
+  failureMessage,
+  fieldErrorsFromDetail,
+  INVALID_INPUT_MESSAGE,
+  NETWORK_ERROR_MESSAGE,
+  readDetail,
+  request,
+  SESSION_EXPIRED_MESSAGE,
+  UNEXPECTED_ERROR_MESSAGE,
+  type Failure,
+  type FieldErrors,
+} from "@/lib/api/request";
 
 const PREFERENCES_API = "/api/v1/preferences";
 
-export { NETWORK_ERROR_MESSAGE };
-export const SESSION_EXPIRED_MESSAGE =
-  "Your session has expired. Sign in again to continue.";
-export const UNEXPECTED_ERROR_MESSAGE =
-  "Something went wrong. Please try again.";
-export const INVALID_PREFERENCES_MESSAGE =
-  "Some fields need your attention. Check the messages below.";
+export {
+  fieldErrorsFromDetail,
+  NETWORK_ERROR_MESSAGE,
+  SESSION_EXPIRED_MESSAGE,
+  UNEXPECTED_ERROR_MESSAGE,
+};
+export type { Failure, FieldErrors };
+export const INVALID_PREFERENCES_MESSAGE = INVALID_INPUT_MESSAGE;
 export const RESUME_TOO_LARGE_MESSAGE =
   "The resume is larger than 10 MB. Upload a smaller file.";
 export const RESUME_WRONG_TYPE_MESSAGE =
@@ -61,10 +73,6 @@ export type ResumeUpload = {
   warning: string | null;
 };
 
-/** Field-level messages keyed by field name (`eeo_answers.<key>` for EEO questions). */
-export type FieldErrors = Record<string, string>;
-
-export type Failure = { ok: false; message: string };
 export type PreferencesResult =
   { ok: true; preferences: Preferences } | Failure;
 export type SaveResult =
@@ -72,74 +80,6 @@ export type SaveResult =
   | (Failure & { fieldErrors: FieldErrors });
 export type UploadResult = ({ ok: true } & ResumeUpload) | Failure;
 export type DeleteResult = { ok: true } | Failure;
-
-type ValidationIssue = { loc?: unknown[]; msg?: unknown };
-
-async function request(
-  input: string,
-  init: RequestInit = {},
-): Promise<Response | null> {
-  try {
-    return await fetch(input, { ...init, credentials: "include" });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
-    }
-    return null;
-  }
-}
-
-async function readDetail(response: Response): Promise<unknown> {
-  try {
-    const body: unknown = await response.json();
-    if (body && typeof body === "object" && "detail" in body) {
-      return body.detail;
-    }
-  } catch {
-    // Not JSON (e.g. an nginx error page).
-  }
-  return undefined;
-}
-
-function failureMessage(response: Response, detail: unknown): string {
-  if (response.status === 401) {
-    return SESSION_EXPIRED_MESSAGE;
-  }
-  // The API's own messages (400/413/415/422 with a string detail) are written for users.
-  if (typeof detail === "string" && response.status < 500) {
-    return detail;
-  }
-  return UNEXPECTED_ERROR_MESSAGE;
-}
-
-/**
- * Map FastAPI's 422 `detail` list to one message per field, e.g.
- * `{loc: ["body", "salary_max"], msg: "Value error, must be ..."}` -> `{salary_max: "Must be ..."}`.
- */
-export function fieldErrorsFromDetail(detail: unknown): FieldErrors {
-  const errors: FieldErrors = {};
-  if (!Array.isArray(detail)) {
-    return errors;
-  }
-  for (const issue of detail as ValidationIssue[]) {
-    const loc = Array.isArray(issue?.loc) ? issue.loc : [];
-    const path = loc[0] === "body" ? loc.slice(1) : loc;
-    const [field, sub] = path;
-    if (typeof field !== "string") {
-      continue;
-    }
-    const key =
-      field === "eeo_answers" && typeof sub === "string"
-        ? `eeo_answers.${sub}`
-        : field;
-    if (key in errors || typeof issue.msg !== "string") {
-      continue;
-    }
-    const message = issue.msg.replace(/^Value error,\s*/, "");
-    errors[key] = message.charAt(0).toUpperCase() + message.slice(1);
-  }
-  return errors;
-}
 
 export async function getPreferences(
   signal?: AbortSignal,

@@ -72,37 +72,37 @@ Display discovered jobs in an actionable inbox interface.
 ### Deliverables
 
 **Inbox Pages (Recommended, Applied, Ignored, Need Attention)**
-- Card-based job list (no HTML tables)
-- Alternating card background colors
-- Per-card: title, company, industry, growth stage, location, work arrangement, job type, salary range, seniority, years exp, match strength, visa sponsorship indicator
-- Jobs whose AI evaluation failed (Ignored inbox, no scores) show a "Not scored" marker with the failure reason from `jobs.evaluation_error`
-- Heart icon to like/unlike jobs
-- Filters: seniority level, work arrangement, job type classification, visa sponsorship
-- Search by company name
+- [x] Card-based job list (no HTML tables)
+- [x] Alternating card background colors
+- [x] Per-card: title, company, industry, growth stage, location, work arrangement, job type, salary range, seniority, years exp, match strength, visa sponsorship indicator
+- [x] Jobs whose AI evaluation failed (Ignored inbox, no scores) show a "Not scored" marker with the failure reason from `jobs.evaluation_error`
+- [x] Heart icon to like/unlike jobs
+- [x] Filters: seniority level, work arrangement, job type classification, visa sponsorship
+- [x] Search by company name
 
 **Job Details Page**
-- Company name, job title, visa sponsorship, location, arrangement, type, seniority, years, scores
-- When evaluation failed: a notice with the failure reason (`jobs.evaluation_error`) in place of the scores
-- Full job description
-- Networking / Outreach section (contacts from company_networking)
-- Click name → open LinkedIn + copy connection request message to clipboard
-- Company details section (description, history, industries, growth stage, employee estimate)
-- Apply button
+- [x] Company name, job title, visa sponsorship, location, arrangement, type, seniority, years, scores
+- [x] When evaluation failed: a notice with the failure reason (`jobs.evaluation_error`) in place of the scores
+- [x] Full job description
+- [x] Networking / Outreach section (contacts from company_networking)
+- [x] Click name → open LinkedIn + copy connection request message to clipboard
+- [x] Company details section (description, history, industries, growth stage, employee estimate)
+- [x] Apply button
 
 **Company Details Page**
-- Company name, description, industries, growth_stage, employee estimate, history
-- List of jobs from jobs table
-- List of contacts from company_networking table
-- LinkedIn company page link
-- LinkedIn people tab link
+- [x] Company name, description, industries, growth_stage, employee estimate, history
+- [x] List of jobs from jobs table
+- [x] List of contacts from company_networking table
+- [x] LinkedIn company page link
+- [x] LinkedIn people tab link
 
 **Companies Page**
-- Sorted by liked, then alphabetically
-- Search box (intelligent)
-- Industry filter (multi-select dropdown)
-- Like/unlike per company
-- Manual add company form (all fields required except history)
-- Click company name → company details page
+- [x] Sorted by liked, then alphabetically
+- [x] Search box (intelligent)
+- [x] Industry filter (multi-select dropdown)
+- [x] Like/unlike per company
+- [x] Manual add company form (all fields required except history)
+- [x] Click company name → company details page
 
 ---
 

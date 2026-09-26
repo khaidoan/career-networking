@@ -20,6 +20,7 @@ from src.agents.evaluator import JobEvaluation, JobForEvaluation
 from src.config import Settings, get_settings
 from src.llm import LlmError, LlmOutputError
 from src.models import AtsBoard, Company, Job, Preferences
+from src.services import evaluation
 from src.sources.ats_sweep import SweepResult
 from src.sources.boards import BoardScan
 from src.sources.google_jobs import SERPAPI_SEARCH_URL, GoogleJobsResult
@@ -271,7 +272,7 @@ def test_failed_evaluation_saves_the_job_unscored_in_the_ignored_inbox(
 
     with sessions() as session:
         saved = session.scalars(select(Job)).one()
-    assert saved.inbox_type == fetcher.EVALUATION_FAILURE_INBOX == "ignored"
+    assert saved.inbox_type == evaluation.EVALUATION_FAILURE_INBOX == "ignored"
     assert saved.overall_score is None
     assert saved.skill_score is None
     assert saved.evaluation_error == "LlmOutputError: invalid JSON after retry"
@@ -279,11 +280,12 @@ def test_failed_evaluation_saves_the_job_unscored_in_the_ignored_inbox(
 
 
 def test_evaluation_error_is_one_line_and_capped() -> None:
-    reason = fetcher.describe_evaluation_error(RuntimeError("line one\n  line two " + "x" * 2000))
+    error = RuntimeError("line one\n  line two " + "x" * 2000)
+    reason = evaluation.describe_evaluation_error(error)
     assert reason.startswith("RuntimeError: line one line two x")
-    assert len(reason) == fetcher.EVALUATION_ERROR_MAX_CHARS
+    assert len(reason) == evaluation.EVALUATION_ERROR_MAX_CHARS
     assert reason.endswith("…")
-    assert fetcher.describe_evaluation_error(TimeoutError()) == "TimeoutError"
+    assert evaluation.describe_evaluation_error(TimeoutError()) == "TimeoutError"
 
 
 def test_google_jobs_postings_older_than_seven_days_or_undated_are_not_processed(

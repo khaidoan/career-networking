@@ -5,9 +5,11 @@ import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 
 import { Button } from "@/components/ui/button";
+import { useReturnFocus } from "@/components/ui/use-return-focus";
 import { cn } from "@/lib/utils";
 
-// Built on the Radix Dialog: focus is trapped inside while open and returned to the trigger on close.
+// Built on the Radix Dialog: focus is trapped inside while open and returned to the element
+// that opened it on close (the trigger, or the button that opened a controlled dialog).
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
@@ -45,11 +47,14 @@ function SheetContent({
   children,
   side = "left",
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "left" | "right";
   showCloseButton?: boolean;
 }) {
+  const focusHandlers = useReturnFocus(onOpenAutoFocus, onCloseAutoFocus);
   return (
     <SheetPrimitive.Portal>
       <SheetOverlay />
@@ -61,6 +66,7 @@ function SheetContent({
           className,
         )}
         {...props}
+        {...focusHandlers}
       >
         {children}
         {showCloseButton && (

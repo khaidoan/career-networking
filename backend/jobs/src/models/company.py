@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Text, false
+from sqlalchemy import Index, Text, false
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,15 @@ if TYPE_CHECKING:
 
 class Company(TimestampMixin, Base):
     __tablename__ = "companies"
+    __table_args__ = (
+        # Trigram index for the typo-tolerant name search (migration 0010 enables pg_trgm).
+        Index(
+            "ix_companies_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False, index=True)

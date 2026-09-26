@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/app-shell/page-placeholder";
+import { InboxPage } from "@/components/jobs/inbox-page";
 
 export const metadata: Metadata = { title: "Need Attention" };
 
 export default function NeedAttentionPage() {
   return (
-    <PagePlaceholder
-      title="Need Attention"
-      message="Nothing needs your attention right now."
+    <InboxPage
+      inbox="need_attention"
+      description="Jobs that need your input before they can move forward."
     />
   );
 }

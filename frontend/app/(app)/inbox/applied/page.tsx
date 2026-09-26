@@ -1,14 +1,9 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/app-shell/page-placeholder";
+import { InboxPage } from "@/components/jobs/inbox-page";
 
 export const metadata: Metadata = { title: "Applied" };
 
 export default function AppliedPage() {
-  return (
-    <PagePlaceholder
-      title="Applied"
-      message="You haven't applied to any jobs yet."
-    />
-  );
+  return <InboxPage inbox="applied" description="Jobs you have applied to." />;
 }

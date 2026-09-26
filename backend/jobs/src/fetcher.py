@@ -32,7 +32,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.agents.company_lookup import enrich_company, is_name_only, lookup_company
-from src.agents.evaluator import JobEvaluation, JobForEvaluation, evaluate_job
+from src.agents.evaluator import JobForEvaluation, evaluate_job
 from src.config import Settings, SettingsError, get_settings
 from src.db.session import get_engine, get_sessionmaker
 from src.logging_config import FETCHER_LOG_FILE_NAME, configure_logging
@@ -43,6 +43,12 @@ from src.models import (
     Company,
     Job,
     Preferences,
+)
+from src.services.evaluation import (
+    INBOX_IGNORED,
+    INBOX_RECOMMENDED,
+    apply_evaluation_failure,
+    apply_evaluation_success,
 )
 from src.sources.ats_sweep import run_sweep_batch
 from src.sources.boards import BoardScan, scan_board
@@ -111,43 +117,9 @@ SOURCE_ATS_SWEEP = "ats_sweep"
 SOURCE_TRACKED_BOARDS = "tracked_boards"
 SOURCES = (SOURCE_GOOGLE_JOBS, SOURCE_ATS_SWEEP, SOURCE_TRACKED_BOARDS)
 
-INBOX_RECOMMENDED = "recommended"
-INBOX_IGNORED = "ignored"
-
 STATUS_COMPLETED = "completed"
 STATUS_LOCKED = "skipped: another run is in progress"
 STATUS_PREFERENCES_INCOMPLETE = "skipped: preferences incomplete"
-
-# Where a job goes when its evaluation fails. It is saved with null scores and the failure
-# reason, and never re-evaluated.
-EVALUATION_FAILURE_INBOX = INBOX_IGNORED
-EVALUATION_ERROR_MAX_CHARS = 1000
-
-
-def describe_evaluation_error(error: Exception) -> str:
-    """A one-line, length-capped reason such as ``LlmOutputError: invalid JSON after retry``."""
-    message = " ".join(str(error).split())
-    reason = f"{type(error).__name__}: {message}" if message else type(error).__name__
-    if len(reason) > EVALUATION_ERROR_MAX_CHARS:
-        reason = reason[: EVALUATION_ERROR_MAX_CHARS - 1] + "…"
-    return reason
-
-
-def apply_evaluation_failure(job: Job, error: Exception) -> None:
-    """Save the job unscored in ``EVALUATION_FAILURE_INBOX`` with the failure reason."""
-    job.inbox_type = EVALUATION_FAILURE_INBOX
-    job.evaluation_error = describe_evaluation_error(error)
-    logger.warning(
-        "Evaluation failed for %r at %s; saved unscored to %s: %s",
-        job.title,
-        job.url,
-        EVALUATION_FAILURE_INBOX,
-        error,
-    )
-
-
-def inbox_for(evaluation: JobEvaluation, match_threshold: int) -> str:
-    return INBOX_RECOMMENDED if evaluation.overall_score >= match_threshold else INBOX_IGNORED
 
 
 @dataclass
@@ -543,9 +515,10 @@ class FetcherRun:
         except Exception as error:
             apply_evaluation_failure(job, error)
             return False
-        for name, value in evaluation.model_dump().items():
-            setattr(job, name, value)
-        job.inbox_type = inbox_for(evaluation, self.settings.match_threshold)
+        # A new job has no inbox yet, so it is always placed by its score.
+        apply_evaluation_success(
+            job, evaluation, self.settings.match_threshold, allow_inbox_move=True
+        )
         return True
 
 

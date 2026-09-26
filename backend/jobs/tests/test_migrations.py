@@ -24,6 +24,7 @@ EXPECTED_REVISION_ORDER = [
     "preferences_seniority_array",
     "create_ats_boards_table",
     "add_jobs_evaluation_error",
+    "add_companies_name_trigram_index",
 ]
 
 

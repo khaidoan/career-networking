@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/app-shell/page-placeholder";
+import { InboxPage } from "@/components/jobs/inbox-page";
 
 export const metadata: Metadata = { title: "Ignored" };
 
 export default function IgnoredPage() {
-  return <PagePlaceholder title="Ignored" message="No ignored jobs." />;
+  return (
+    <InboxPage
+      inbox="ignored"
+      description="Jobs below your match threshold, and jobs that could not be scored."
+    />
+  );
 }

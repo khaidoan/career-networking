@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { CheckIcon } from "lucide-react";
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
@@ -69,6 +70,31 @@ function DropdownMenuItem({
   );
 }
 
+// A multi-select option: the check box shows the state; the text stays readable when focused.
+function DropdownMenuCheckboxItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+  return (
+    <DropdownMenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-checkbox-item"
+      className={cn(
+        "group relative flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 text-sm outline-none select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-60",
+        className,
+      )}
+      {...props}
+    >
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-sm border border-input bg-surface text-accent-foreground group-focus:border-accent-foreground group-data-[state=checked]:border-accent group-data-[state=checked]:bg-accent">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <CheckIcon aria-hidden="true" className="size-3" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.CheckboxItem>
+  );
+}
+
 function DropdownMenuLabel({
   className,
   ...props
@@ -101,6 +127,7 @@ export {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 };

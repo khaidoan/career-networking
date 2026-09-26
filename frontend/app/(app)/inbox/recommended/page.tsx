@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/app-shell/page-placeholder";
+import { InboxPage } from "@/components/jobs/inbox-page";
 
 export const metadata: Metadata = { title: "Recommended" };
 
 export default function RecommendedPage() {
   return (
-    <PagePlaceholder title="Recommended" message="No recommended jobs yet." />
+    <InboxPage
+      inbox="recommended"
+      description="Jobs that match your preferences, liked jobs first, then newest."
+    />
   );
 }
