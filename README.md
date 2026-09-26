@@ -115,22 +115,32 @@ Both stacks run `alembic upgrade head` when the jobs container starts, so the sc
 
 ### Job fetcher
 
-The `fetcher` service (in both compose files) is built from the `backend/jobs` image and uses the same `.env` and data/log volumes. It waits until the `jobs` service is healthy (so migrations have run), then runs `python -m src.fetcher` every 30 minutes through [supercronic](https://github.com/aptible/supercronic); the schedule is in `backend/jobs/crontab`.
+The `fetcher` service (in both compose files) is built from the `backend/jobs` image and uses the same `.env` and data/log volumes. It waits until the `jobs` service is healthy (so migrations have run), then runs `python -m src.fetcher` once a day at 06:00 UTC through [supercronic](https://github.com/aptible/supercronic); the schedule is in `backend/jobs/crontab`. A run takes roughly 30–90 minutes, almost all of it the ATS sweep's HTTP requests; it spends no LLM tokens until a posting has passed every filter below.
 
 **Preconditions:** the fetcher does nothing until the Profile page has at least one desired job title and a country saved. Until then each run logs `Fetcher skipped: preferences incomplete …` and exits, and the Profile page shows that discovery is paused. If a run is still going when the next one starts, the new one logs `Fetcher skipped: another run is in progress` and exits (both exit with status 0).
 
 **Each run, in order:**
 
-1. **Google Jobs** (optional, see [Google Jobs](#google-jobs-optional)): only if `SERPAPI_API_KEY` is set and the interval has passed since the last successful search.
-2. **ATS sweep:** public company directories for Greenhouse, Lever, Ashby, Workday, iCIMS and BambooHR (from [job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator), cached for 24 hours) are combined into one list, and each run checks the next 1/48 of it, so the whole list is covered about once a day. If the download fails the cached copy is used; with no cache at all the sweep is skipped for that run.
-3. **Tracked boards:** every board that has had a matching job (from the sweep or from a Google Jobs apply link) is tracked in the `ats_boards` table and polled on every run.
-4. **Pruning:** boards with no matching job for 30 days are deactivated; they are reactivated if discovery finds them again.
+1. **Google Jobs search** (optional, see [Google Jobs](#google-jobs-optional)): only if `SERPAPI_API_KEY` is set and the interval has passed since the last successful search (with up to an hour's grace, so a daily run is never skipped for starting a little early). Boards found in apply links are tracked right away; the postings wait for step 4.
+2. **ATS sweep:** the public company directories for Greenhouse, Lever, Ashby, Workday, iCIMS and BambooHR (about 50,000 boards, from [job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator), cached for 24 hours) are all scanned in every run. If the download fails the cached copy is used; with no cache at all the sweep is skipped for that run.
+3. **Tracked boards:** every board that has had a matching job is tracked in the `ats_boards` table. Boards the sweep already covered this run are not fetched again, so in practice this polls the boards found only through Google Jobs.
+4. **Google Jobs postings** are ingested after the ATS sources, so a job an ATS board already gave us is not evaluated twice (see below).
+5. **Pruning:** boards with no matching job for 30 days are deactivated; they are reactivated if discovery finds them again.
 
-A posting is kept only if its title contains every word of one of your desired titles, its location matches your country (or it is remote without a conflicting country), and it was published in the last 7 days. The 7-day rule applies to every source, Google Jobs included: postings with no publish date, or older than 7 days, are never processed. New jobs (deduplicated by URL, ignoring tracking parameters) get a company record (looked up by the AI when the company is new), are scored by the evaluator, and go to the Recommended or Ignored inbox based on `CAREER_NETWORKING_MATCH_THRESHOLD`. If the evaluator fails (for example the LLM is unreachable or returns invalid output), the job is saved without scores in the Ignored inbox, with the reason in `jobs.evaluation_error`, and it is not evaluated again. A failure in one source or job is logged and the run continues.
+**Filters (free, before any LLM call).** Every source, Google Jobs included, applies the same checks, and each one keeps a posting whenever it cannot tell:
+
+- **Title:** the title contains every word of one of your desired titles.
+- **Seniority:** only if you picked seniority levels on the Profile page. A posting is dropped only when its title plainly names a level at least two steps from every level you picked (for example "Intern" or "VP" for a Senior search). Only unambiguous words count (intern, junior, new grad, senior, sr, principal, director, VP, chief … officer). Titles with no level word, or with an ambiguous one such as "Manager", "Lead", "Staff", "Head" or "Associate", always pass, and the evaluator judges them.
+- **Country:** the location names your country, or is remote without naming another country. A bare "Remote" on an ATS board is dropped only when the board's other postings name other countries but never yours (for example a German company's "Remote" role in a US search). Google Jobs searches are already country-scoped, so a bare "Remote" there is kept.
+- **Recency:** published in the last 7 days. Postings with no publish date, or older than 7 days, are never processed.
+
+**Duplicates.** Postings are deduplicated by URL, ignoring tracking parameters. A Google Jobs posting whose link is not an ATS link (for example LinkedIn or Indeed) is also skipped when an ATS source already has the same job: same company (ignoring suffixes such as "Inc." or "Corp"), same title and a compatible country, found this run or in the last 30 days.
+
+**Scoring.** Each new job is scored by the evaluator and goes to the Recommended or Ignored inbox based on `CAREER_NETWORKING_MATCH_THRESHOLD`. The company is then matched by name; the AI company lookup runs only for recommended jobs, so a company whose jobs are all ignored is saved by name only (and filled in later if one of its jobs is recommended). If the evaluator fails (for example the LLM is unreachable or returns invalid output), the job is saved without scores in the Ignored inbox, with the reason in `jobs.evaluation_error`, and it is not evaluated again. A failure in one source or job is logged and the run continues.
 
 #### Fetch now
 
-There is no button for this in the app. To run the fetcher immediately instead of waiting for the next 30-minute run:
+There is no button for this in the app. To run the fetcher immediately instead of waiting for tomorrow's run:
 
 ```bash
 docker compose exec fetcher python -m src.fetcher
@@ -234,6 +244,6 @@ docker run --rm --network host --user "$(id -u):$(id -g)" \
 ## Credits
 
 - [Career-Ops](https://github.com/career-ops-hq/career-ops) (MIT License): the ATS provider modules in `backend/jobs/src/sources/providers/` and the directory sweep in `backend/jobs/src/sources/ats_sweep.py` are Python ports of its provider scanners and `scan-ats-full.mjs`.
-- [Feashliaa/job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator) (MIT License): the company directories used by the ATS sweep.
+- [Feashliaa/job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator) by Riley Dorrington: the company directories used by the ATS sweep. The project's code is MIT licensed, but these datasets (its `data/` folder) are licensed [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/): free for personal, non-commercial use with attribution. Commercial use needs the author's permission. The fetcher downloads them at run time; they are not included in this repository.
 
 The MIT notices are kept in the header of each ported module.

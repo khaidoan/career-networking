@@ -24,7 +24,7 @@ BROWSER_LIKE_USER_AGENT = (
     "Chrome/140.0.0.0 Safari/537.36"
 )
 REQUEST_TIMEOUT_SECONDS = 20.0
-MAX_CONCURRENT_REQUESTS = 8
+MAX_CONCURRENT_REQUESTS = 24
 MAX_RESPONSE_BYTES = 60 * 1024 * 1024
 # Attempts per request for rate limits, gateway errors and timeouts (first try included).
 MAX_ATTEMPTS = 2

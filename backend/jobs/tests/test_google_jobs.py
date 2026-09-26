@@ -12,6 +12,7 @@ from src.config import Settings
 from src.sources.filters import SearchCriteria
 from src.sources.google_jobs import (
     SERPAPI_SEARCH_URL,
+    is_due,
     recover_full_description,
     run_google_jobs,
 )
@@ -52,13 +53,23 @@ def test_without_an_api_key_the_source_is_skipped_with_one_log_line_and_no_reque
 def test_nothing_is_searched_before_the_interval_has_passed(
     serpapi_settings: Settings, fake_http: FakeHttp, state: FileFetcherState
 ) -> None:
-    state.set_google_jobs_last_run(NOW - timedelta(hours=23))
+    state.set_google_jobs_last_run(NOW - timedelta(hours=22))
 
     result = run_google_jobs(serpapi_settings, CRITERIA, fake_http.client(), state, NOW)
 
     assert result is None
     assert fake_http.requests == []
-    assert state.get_google_jobs_last_run() == NOW - timedelta(hours=23)
+    assert state.get_google_jobs_last_run() == NOW - timedelta(hours=22)
+
+
+def test_a_daily_run_starting_slightly_early_is_still_due(
+    serpapi_settings: Settings, state: FileFetcherState
+) -> None:
+    # Yesterday's run recorded its start a few minutes later than today's cron start.
+    state.set_google_jobs_last_run(NOW - timedelta(hours=23, minutes=55))
+    assert is_due(serpapi_settings, state, NOW)
+    state.set_google_jobs_last_run(NOW - timedelta(hours=22, minutes=59))
+    assert not is_due(serpapi_settings, state, NOW)
 
 
 def test_results_prefer_ats_apply_links_return_boards_and_recover_full_descriptions(

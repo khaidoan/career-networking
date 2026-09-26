@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from src.sources import ats_sweep
 from src.sources.ats_sweep import directory_url, run_sweep_batch
 from src.sources.boards import scan_board
 from src.sources.filters import SearchCriteria, location_matches
@@ -190,8 +191,10 @@ def test_detect_board_maps_apply_urls_to_provider_and_board_key(
 
 
 def test_sweep_uses_stale_directory_cache_rotates_batches_and_skips_without_any_cache(
-    fake_http: FakeHttp, tmp_path: os.PathLike[str]
+    fake_http: FakeHttp, tmp_path: os.PathLike[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Production scans everything once a day; a multi-run pass exercises the rotation cursor.
+    monkeypatch.setattr(ats_sweep, "RUNS_PER_FULL_PASS", 48)
     state = FileFetcherState(tmp_path / "_fetcher")
     cache = state.directory_cache_dir() / "greenhouse_companies.json"
     cache.write_text(json.dumps([f"company{number}" for number in range(96)] + ["bad slug!"]))

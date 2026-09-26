@@ -1,14 +1,15 @@
 """Reverse ATS sweep over the public job-board-aggregator company directories.
 
-Each run scans the next ``ceil(total / RUNS_PER_FULL_PASS)`` boards of the combined directory,
-so with a run every 30 minutes one full pass takes about a day. Boards with matching postings
-are returned so the fetcher can track them in ``ats_boards``.
+Each run scans the next ``ceil(total / RUNS_PER_FULL_PASS)`` boards of the combined directory;
+with the fetcher running once a day and ``RUNS_PER_FULL_PASS = 1``, every run is a full pass.
+Boards with matching postings are returned so the fetcher can track them in ``ats_boards``.
 
 Ported from Career-Ops ``scan-ats-full.mjs`` (https://github.com/career-ops-hq/career-ops),
-Copyright (c) 2026 Santiago Fernández de Valderrama, used under the MIT License. Company
-directories from Feashliaa/job-board-aggregator
-(https://github.com/Feashliaa/job-board-aggregator), Copyright (c) 2026 Riley Dorrington,
-used under the MIT License.
+Copyright (c) 2026 Santiago Fernández de Valderrama, used under the MIT License. The company
+directories are downloaded at run time from Feashliaa/job-board-aggregator
+(https://github.com/Feashliaa/job-board-aggregator) by Riley Dorrington. The project's code is
+MIT licensed, but its ``data/`` datasets are licensed CC BY-NC 4.0: free for non-commercial use
+with attribution; commercial use needs the author's permission. They are not redistributed here.
 """
 
 import json
@@ -35,8 +36,10 @@ DIRECTORY_BASE_URL = "https://raw.githubusercontent.com/Feashliaa/job-board-aggr
 DIRECTORY_CACHE_TTL = timedelta(hours=24)
 DIRECTORY_TIMEOUT_SECONDS = 60.0
 DIRECTORY_MAX_BYTES = 20 * 1024 * 1024
-RUNS_PER_FULL_PASS = 48
-SWEEP_CONCURRENCY = 8
+# The fetcher runs once a day, so each run scans the whole directory (about 50,000 boards).
+# Raising this spreads a pass over several runs; the rotation cursor keeps working.
+RUNS_PER_FULL_PASS = 1
+SWEEP_CONCURRENCY = 24
 
 SLUG = re.compile(r"^[A-Za-z0-9._-]+$")
 # Part of the Workday directory holds instance names ("wd5") in the tenant field; they never

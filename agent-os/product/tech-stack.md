@@ -45,7 +45,7 @@ career-networking/
 | Browser Automation | Playwright | LinkedIn outreach (user-triggered) |
 | PDF Generation | WeasyPrint or reportlab | Convert markdown → PDF |
 | Resume Parsing | python-docx + PyPDF2/pdfminer | Extract text from .docx and .pdf |
-| Task Scheduling | Docker Compose + cron | Runs fetcher.py every 30 minutes |
+| Task Scheduling | Docker Compose + cron | Runs fetcher.py once a day (06:00 UTC) |
 | Logging | Python `logging` module | Central log file: `career_networking.log` |
 
 ---

@@ -78,6 +78,7 @@ class FakeSources:
         self.scores: dict[str, int | Exception] = {}
         self.polled: list[str] = []
         self.looked_up: list[str] = []
+        self.enriched: list[str] = []
         self.recovered: list[str] = []
         self.evaluated: list[JobForEvaluation] = []
         monkeypatch.setattr(fetcher, "run_google_jobs", self._google)
@@ -85,6 +86,7 @@ class FakeSources:
         monkeypatch.setattr(fetcher, "scan_board", self._scan)
         monkeypatch.setattr(fetcher, "recover_full_description", self._recover)
         monkeypatch.setattr(fetcher, "lookup_company", self._lookup)
+        monkeypatch.setattr(fetcher, "enrich_company", self._enrich)
         monkeypatch.setattr(fetcher, "evaluate_job", self._evaluate)
 
     @staticmethod
@@ -110,6 +112,10 @@ class FakeSources:
     def _lookup(self, _session: Session, name: str, _description: str | None = None) -> Company:
         self.looked_up.append(name)
         raise LlmError("model unavailable")
+
+    def _enrich(self, _session: Session, company: Company, _description: str | None = None) -> None:
+        self.enriched.append(company.name)
+        company.description = f"{company.name} makes things."
 
     def _evaluate(self, _session: Session, job: JobForEvaluation, _prefs: Any) -> JobEvaluation:
         self.evaluated.append(job)
@@ -210,18 +216,24 @@ def test_run_dedups_urls_matches_companies_and_routes_jobs_by_score(
     assert recommended.inbox_type == "recommended"
     assert recommended.overall_score == 85
     assert recommended.work_arrangement == "remote"
-    assert recommended.source == "google_jobs:LinkedIn"
+    # ATS sources are ingested before Google postings, so the job keeps its ATS source and the
+    # Google copy of it is a duplicate (no second evaluation, no description fetch).
+    assert recommended.source == "greenhouse"
 
     ignored = jobs["Backend Engineer II"]
     assert ignored.inbox_type == "ignored"
     assert ignored.source == "lever"
     assert ignored.company_id == companies["Globex"].id
     assert companies["Globex"].website_url is None
-    assert sources.looked_up == ["Globex"]
-    assert sources.recovered == [acme_new.url]
+    # No tokens on the company of an ignored job; the recommended job enriches its bare company.
+    assert sources.looked_up == []
+    assert sources.enriched == ["Acme Corp"]
+    assert companies["Acme Corp"].description == "Acme Corp makes things."
+    assert sources.recovered == []
+    # ATS postings (sweep, then tracked boards) are evaluated before Google postings.
     assert [job.title for job in sources.evaluated] == [
-        "Senior Backend Engineer",
         "Backend Engineer II",
+        "Senior Backend Engineer",
     ]
 
     assert boards["acme"].discovered_via == "google_jobs"
@@ -233,8 +245,11 @@ def test_run_dedups_urls_matches_companies_and_routes_jobs_by_score(
     assert sources.polled == ["acme"]
 
     google = summary.sources["google_jobs"]
-    assert (google.fetched, google.new, google.duplicate) == (2, 1, 1)
-    assert summary.sources["tracked_boards"].duplicate == 1
+    assert (google.fetched, google.new, google.duplicate) == (2, 0, 2)
+    assert (summary.sources["tracked_boards"].new, summary.sources["tracked_boards"].duplicate) == (
+        1,
+        0,
+    )
     assert (summary.evaluated, summary.recommended, summary.ignored) == (2, 1, 1)
 
 
@@ -438,7 +453,14 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
         looked_up.append(name)
         raise LlmError("model unavailable")
 
+    def failing_enrich(
+        _session: Session, company: Company, _description: str | None = None
+    ) -> None:
+        looked_up.append(f"enrich {company.name}")
+        raise LlmError("model unavailable")
+
     monkeypatch.setattr(fetcher, "lookup_company", failing_lookup)
+    monkeypatch.setattr(fetcher, "enrich_company", failing_enrich)
     monkeypatch.setattr(fetcher, "evaluate_job", lambda *_args: _evaluation(80))
 
     greenhouse_jobs = fixture_json("ats/greenhouse.json")
@@ -496,8 +518,13 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
     assert globex.last_matched_at == NOW
     assert globex.last_polled_at == NOW + timedelta(hours=1)
 
-    assert first.sources["google_jobs"].new == 2
-    assert first.sources["tracked_boards"].duplicate == 1  # job 101 again, without ?gh_src
+    # The acme board Google found is polled in the same run and yields job 101 first; the Google
+    # copy (with ?gh_src) is then a duplicate. Globex's Lever job comes only from Google.
+    assert (first.sources["tracked_boards"].new, first.sources["tracked_boards"].duplicate) == (
+        1,
+        0,
+    )
+    assert (first.sources["google_jobs"].new, first.sources["google_jobs"].duplicate) == (1, 1)
     # Google Jobs is not due again for 24 hours, so the second run only polls tracked boards.
     assert not any(
         request.url.host == "serpapi.com" for request in fake_http.requests[first_requests:]
@@ -510,13 +537,17 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
         "https://jobs.lever.co/globex/7f3c2a10-aaaa-bbbb-cccc-1234567890ab/apply",
         "https://job-boards.greenhouse.io/acme/jobs/106",
     }
-    assert jobs["https://job-boards.greenhouse.io/acme/jobs/101"].source == "google_jobs:LinkedIn"
+    assert jobs["https://job-boards.greenhouse.io/acme/jobs/101"].source == "greenhouse"
+    globex_job = jobs["https://jobs.lever.co/globex/7f3c2a10-aaaa-bbbb-cccc-1234567890ab/apply"]
+    assert globex_job.source == "google_jobs:Glassdoor"
     tracked_job = jobs["https://job-boards.greenhouse.io/acme/jobs/106"]
     assert tracked_job.source == "greenhouse" and tracked_job.inbox_type == "recommended"
     assert (
         tracked_job.company_id == jobs["https://job-boards.greenhouse.io/acme/jobs/101"].company_id
     )
-    assert looked_up == ["Acme Corp", "Globex"]
+    # Both jobs are recommended, so both new companies are looked up (and fail, leaving names);
+    # run 2's recommended job 106 then retries the still name-only Acme Corp.
+    assert looked_up == ["Acme Corp", "Globex", "enrich Acme Corp"]
 
 
 def test_ignored_jobs_older_than_seven_days_are_deleted_even_when_discovery_is_paused(
@@ -555,3 +586,64 @@ def test_ignored_jobs_older_than_seven_days_are_deleted_even_when_discovery_is_p
     assert titles == {"new-ignored", "old-recommended", "old-applied"}
     assert summary.status == fetcher.STATUS_PREFERENCES_INCOMPLETE
     assert summary.ignored_jobs_deleted == 1
+
+
+def test_google_postings_get_the_free_filters_and_skip_jobs_an_ats_board_already_gave_us(
+    test_settings: Settings,
+    sessions: sessionmaker[Session],
+    sources: FakeSources,
+    fake_http: FakeHttp,
+) -> None:
+    _save_preferences(
+        sessions, desired_titles=["Backend Engineer"], country="US", seniority=["senior"]
+    )
+    ats_job = _posting(
+        "Senior Backend Engineer",
+        "acme",
+        "https://job-boards.greenhouse.io/acme/jobs/5",
+        "greenhouse",
+    )
+    sources.sweep = SweepResult(
+        boards_scanned=1,
+        matched_boards=[
+            BoardScan(board=BoardRef("greenhouse", "acme"), fetched=1, matches=[ats_job])
+        ],
+    )
+
+    def google(title: str, url: str, location: str = "New York, NY") -> Posting:
+        posting = _posting(title, "Acme Corp, Inc.", url, "google_jobs:LinkedIn")
+        posting.location = location
+        return posting
+
+    same_job_on_linkedin = google("Senior Backend Engineer", "https://www.linkedin.com/jobs/view/1")
+    new_job = google("Senior Backend Engineer", "https://www.linkedin.com/jobs/view/2")
+    new_job.company = "Initech"
+    wrong_country = google(
+        "Senior Backend Engineer", "https://www.linkedin.com/jobs/view/3", "Berlin, Germany"
+    )
+    wrong_level = google("Backend Engineering Intern", "https://www.linkedin.com/jobs/view/4")
+    wrong_title = google("Senior Frontend Engineer", "https://www.linkedin.com/jobs/view/5")
+    sources.google = GoogleJobsResult(
+        postings=[same_job_on_linkedin, new_job, wrong_country, wrong_level, wrong_title],
+        boards=[],
+        searches=1,
+    )
+    sources.scores = {"Senior Backend Engineer": 80}
+
+    summary = _run(test_settings, sessions, fake_http)
+
+    with sessions() as session:
+        urls = set(session.scalars(select(Job.url)))
+    assert urls == {ats_job.url, new_job.url}
+    # Two evaluations: the ATS job and the one genuinely new Google job.
+    assert len(sources.evaluated) == 2
+    google_stats = summary.sources["google_jobs"]
+    assert (google_stats.fetched, google_stats.matched) == (5, 2)
+    assert (google_stats.new, google_stats.duplicate) == (1, 1)
+
+
+def test_company_names_and_titles_are_compared_loosely_for_cross_source_dedup() -> None:
+    assert fetcher.company_key("Acme Corp, Inc.") == fetcher.company_key("acme") == "acme"
+    assert fetcher.company_key("The Home Depot") == "homedepot"
+    assert fetcher.company_key("Inc") == "inc"
+    assert fetcher.title_key("Senior  Backend-Engineer (C++)") == "senior backend engineer c++"

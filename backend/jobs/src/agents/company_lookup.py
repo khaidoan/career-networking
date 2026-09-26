@@ -1,4 +1,8 @@
-"""Company lookup: fills a new ``companies`` row from the model's own knowledge (no browsing)."""
+"""Company lookup: fills a ``companies`` row from the model's own knowledge (no browsing).
+
+The fetcher only calls it for companies with a recommended job, so no tokens are spent on
+companies whose jobs all go to the Ignored inbox.
+"""
 
 from urllib.parse import urlsplit
 
@@ -67,6 +71,26 @@ def _user_content(name: str, description: str | None) -> str:
     if description:
         content += f"\n\nJob description from this company:\n{description[:MAX_DESCRIPTION_CHARS]}"
     return content
+
+
+def is_name_only(company: Company) -> bool:
+    """True for a company saved without a profile (lookup skipped or failed)."""
+    return all(getattr(company, field) is None for field in CompanyProfile.model_fields)
+
+
+def enrich_company(session: Session, company: Company, description: str | None = None) -> None:
+    """Fill the empty profile fields of an existing company; raises ``LlmError`` like lookup."""
+    system_prompt = resolve_system_prompt(session, AGENT_NAME, COMPANY_LOOKUP_SYSTEM_PROMPT)
+    profile = complete_structured(
+        system_prompt,
+        _user_content(company.name, description),
+        CompanyProfile,
+        agent_name=AGENT_NAME,
+    )
+    for field, value in profile.model_dump().items():
+        if getattr(company, field) is None and value is not None:
+            setattr(company, field, value)
+    session.flush()
 
 
 def lookup_company(session: Session, name: str, description: str | None = None) -> Company:

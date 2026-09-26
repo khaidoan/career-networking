@@ -1,17 +1,23 @@
 """One fetcher run: discover jobs, track ATS boards, dedup, evaluate and ingest.
 
 Every run first deletes ignored jobs older than ``IGNORED_JOB_RETENTION``. Then, in order:
-Google Jobs (when enabled and due) -> ATS sweep batch -> polling of every active tracked
-board -> pruning. Each source and each job is isolated, so a failure is logged and the
+Google Jobs search (when enabled and due; its boards are tracked right away) -> full ATS sweep
+-> polling of tracked boards the sweep did not cover -> ingestion of the Google Jobs postings
+-> pruning. Google postings are ingested last so a job the ATS sources already found is not
+evaluated a second time. Each source and each job is isolated, so a failure is logged and the
 run continues. A Postgres advisory lock keeps two runs from overlapping.
 
-The ``fetcher`` compose service runs this every 30 minutes. An on-demand
+LLM tokens are spent only on postings that pass the free filters (title, seniority, country,
+7-day recency) and both duplicate checks; the company lookup runs only for recommended jobs.
+
+The ``fetcher`` compose service runs this once a day. An on-demand
 "Fetch now" is the same command run by hand; there is no API endpoint or UI button:
 
     docker compose exec fetcher python -m src.fetcher
 """
 
 import logging
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -25,7 +31,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.agents.company_lookup import lookup_company
+from src.agents.company_lookup import enrich_company, is_name_only, lookup_company
 from src.agents.evaluator import JobEvaluation, JobForEvaluation, evaluate_job
 from src.config import Settings, SettingsError, get_settings
 from src.db.session import get_engine, get_sessionmaker
@@ -40,8 +46,15 @@ from src.models import (
 )
 from src.sources.ats_sweep import run_sweep_batch
 from src.sources.boards import BoardScan, scan_board
-from src.sources.filters import SearchCriteria, is_recent
+from src.sources.filters import (
+    SearchCriteria,
+    is_recent,
+    location_matches,
+    seniority_matches,
+    title_matches,
+)
 from src.sources.google_jobs import recover_full_description, run_google_jobs
+from src.sources.locations import countries_in
 from src.sources.providers import get_provider
 from src.sources.providers.base import BoardRef, HttpClient, Posting, create_http_client
 from src.sources.state import get_fetcher_state
@@ -58,6 +71,39 @@ BOARD_PRUNE_AFTER = timedelta(days=30)
 # under 7 days old, so a deleted job cannot come back through the same posting.
 IGNORED_JOB_RETENTION = timedelta(days=7)
 TRACKED_POLL_CONCURRENCY = 8
+# How far back a Google posting is compared against ATS jobs for the cross-source duplicate check.
+CROSS_SOURCE_DEDUP_WINDOW = timedelta(days=30)
+# Legal-form words ignored when comparing company names ("Acme Corp" matches board slug "acme").
+COMPANY_SUFFIXES = frozenset(
+    [
+        "the",
+        "inc",
+        "incorporated",
+        "corp",
+        "corporation",
+        "co",
+        "company",
+        "llc",
+        "llp",
+        "ltd",
+        "limited",
+        "plc",
+        "gmbh",
+        "ag",
+        "sa",
+        "sas",
+        "bv",
+        "nv",
+        "oy",
+        "ab",
+        "as",
+        "srl",
+        "spa",
+        "pty",
+        "pte",
+        "kk",
+    ]
+)
 JOB_URL_CONSTRAINT = "uq_jobs_url"
 
 SOURCE_GOOGLE_JOBS = "google_jobs"
@@ -241,6 +287,10 @@ class FetcherRun:
         self.summary = summary
         self.state = get_fetcher_state(settings)
         self.seen_urls: set[str] = set()
+        # Google postings wait until the ATS sources have been ingested (cross-source dedup).
+        self.google_postings: list[Posting] = []
+        # (company key, title key) -> countries named, for ATS jobs handled in this run.
+        self.ats_jobs: dict[tuple[str, str], list[set[str]]] = {}
         # Boards scanned by the sweep this run; polling them again would repeat the same fetch.
         self.scanned_boards: set[tuple[str, str]] = set()
 
@@ -249,6 +299,7 @@ class FetcherRun:
             (SOURCE_GOOGLE_JOBS, self.google_jobs),
             (SOURCE_ATS_SWEEP, self.ats_sweep),
             (SOURCE_TRACKED_BOARDS, self.tracked_boards),
+            (SOURCE_GOOGLE_JOBS, self.ingest_google_jobs),
             ("pruning", self.prune),
         ]
         for name, step in steps:
@@ -266,15 +317,70 @@ class FetcherRun:
         result = run_google_jobs(self.settings, self.criteria, self.client, self.state, self.now)
         if result is None:
             return
-        # Same recency rule as the ATS sources: undated or older postings are never processed.
-        postings = [
-            posting for posting in result.postings if is_recent(posting.published_at, self.now)
-        ]
+        # The same free filters as the ATS sources, so no token is spent on a posting that an
+        # ATS board would have dropped. The search is country-scoped, so a bare "Remote" is kept.
+        postings = [posting for posting in result.postings if self._google_posting_matches(posting)]
         stats.fetched = len(result.postings)
         stats.matched = len(postings)
         stats.failed += result.failed_searches
         upsert_boards(self.session_factory, result.boards, DISCOVERED_VIA_GOOGLE_JOBS, self.now)
-        self.ingest(postings, stats, recover_descriptions=True)
+        self.google_postings = postings
+
+    def _google_posting_matches(self, posting: Posting) -> bool:
+        return (
+            title_matches(posting.title, self.criteria.desired_titles)
+            and seniority_matches(posting.title, self.criteria.seniority)
+            and location_matches(posting.location, self.criteria.country)
+            and is_recent(posting.published_at, self.now)
+        )
+
+    def ingest_google_jobs(self) -> None:
+        """Ingest the Google postings that no ATS source already covered."""
+        stats = self.summary.sources[SOURCE_GOOGLE_JOBS]
+        postings, self.google_postings = self.google_postings, []
+        if not postings:
+            return
+        known = self._recent_ats_jobs()
+        fresh = []
+        for posting in postings:
+            # An ATS apply link is deduplicated by URL; this catches LinkedIn, Indeed and other
+            # links to a job an ATS board already gave us.
+            if posting.board is None and self._covered_by_ats(posting, known):
+                self.seen_urls.add(normalize_url(posting.url) or posting.url)
+                stats.duplicate += 1
+            else:
+                fresh.append(posting)
+        self.ingest(fresh, stats, recover_descriptions=True)
+
+    def _recent_ats_jobs(self) -> dict[tuple[str, str], list[set[str]]]:
+        """ATS jobs from this run and the last ``CROSS_SOURCE_DEDUP_WINDOW`` in the database."""
+        known = {key: list(countries) for key, countries in self.ats_jobs.items()}
+        with self.session_factory() as session:
+            rows = session.execute(
+                select(Company.name, Job.title, Job.location_country)
+                .join(Company, Job.company_id == Company.id)
+                .where(
+                    Job.discovered_when >= self.now - CROSS_SOURCE_DEDUP_WINDOW,
+                    Job.source.not_like(f"{SOURCE_GOOGLE_JOBS}:%"),
+                )
+            ).all()
+        for row in rows:
+            key = (company_key(row.name), title_key(row.title))
+            known.setdefault(key, []).append(
+                {row.location_country} if row.location_country else set()
+            )
+        return known
+
+    @staticmethod
+    def _covered_by_ats(posting: Posting, known: dict[tuple[str, str], list[set[str]]]) -> bool:
+        countries = countries_in(posting.location or "")
+        for ats_countries in known.get(
+            (company_key(posting.company), title_key(posting.title)), []
+        ):
+            # Unknown locations on either side count as the same job.
+            if not countries or not ats_countries or countries & ats_countries:
+                return True
+        return False
 
     def ats_sweep(self) -> None:
         stats = self.summary.sources[SOURCE_ATS_SWEEP]
@@ -288,6 +394,7 @@ class FetcherRun:
         upsert_boards(self.session_factory, boards, DISCOVERED_VIA_ATS_SWEEP, self.now, polled=True)
         postings = [posting for scan in result.matched_boards for posting in scan.matches]
         stats.matched = len(postings)
+        self._remember_ats(postings)
         self.ingest(postings, stats)
 
     def tracked_boards(self) -> None:
@@ -328,7 +435,13 @@ class FetcherRun:
         postings = [posting for scan in scans.values() if scan for posting in scan.matches]
         stats.fetched = sum(scan.fetched for scan in scans.values() if scan)
         stats.matched = len(postings)
+        self._remember_ats(postings)
         self.ingest(postings, stats)
+
+    def _remember_ats(self, postings: Sequence[Posting]) -> None:
+        for posting in postings:
+            key = (company_key(posting.company), title_key(posting.title))
+            self.ats_jobs.setdefault(key, []).append(countries_in(posting.location or ""))
 
     def _poll_board(self, board: tuple[str, str, str | None]) -> BoardScan | None:
         provider, board_key, company_name = board
@@ -379,7 +492,12 @@ class FetcherRun:
                 logger.exception("Could not ingest %r from %s", posting.title, posting.source)
 
     def ingest_one(self, url: str, posting: Posting, stats: SourceStats) -> None:
-        """Company, evaluation and job insert for one new posting, in one transaction."""
+        """Evaluation, company and job insert for one new posting, in one transaction.
+
+        The job is evaluated first so the company lookup (more tokens) only runs when the job is
+        recommended; companies of ignored jobs are saved by name and enriched if a later job of
+        theirs is recommended.
+        """
         job = Job(
             title=posting.title.strip(),
             url=url,
@@ -388,9 +506,12 @@ class FetcherRun:
         )
         try:
             with self.session_factory() as session, session.begin():
-                job.company_id = find_or_create_company(session, posting).id
                 evaluated = self._evaluate(session, job, posting)
                 inbox = job.inbox_type
+                company = find_or_create_company(
+                    session, posting, look_up=inbox == INBOX_RECOMMENDED
+                )
+                job.company_id = company.id
                 session.add(job)
         except IntegrityError as error:
             if _constraint_name(error) != JOB_URL_CONSTRAINT:
@@ -428,8 +549,22 @@ class FetcherRun:
         return True
 
 
-def find_or_create_company(session: Session, posting: Posting) -> Company:
-    """Case-insensitive exact name match, else the lookup agent, else a name-only company."""
+def company_key(name: str) -> str:
+    """A company name reduced for comparison: "Acme Corp, Inc." -> "acme"."""
+    words = re.findall(r"[a-z0-9]+", name.casefold())
+    return "".join(word for word in words if word not in COMPANY_SUFFIXES) or "".join(words)
+
+
+def title_key(title: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9+#]+", title.casefold()))
+
+
+def find_or_create_company(session: Session, posting: Posting, *, look_up: bool) -> Company:
+    """Case-insensitive exact name match, else a new company.
+
+    With ``look_up`` (the job is recommended) a new company is filled by the lookup agent and a
+    name-only one is enriched; otherwise no tokens are spent and a new company is saved by name.
+    """
     name = posting.company.strip()
     if not name:
         raise ValueError("posting has no company name")
@@ -440,12 +575,21 @@ def find_or_create_company(session: Session, posting: Posting) -> Company:
         .limit(1)
     ).first()
     if company is not None:
+        if look_up and is_name_only(company):
+            try:
+                with session.begin_nested():
+                    enrich_company(session, company, posting.description)
+            except Exception as error:
+                logger.warning(
+                    "Company lookup failed for %r; keeping the name only: %s", name, error
+                )
         return company
-    try:
-        with session.begin_nested():
-            return lookup_company(session, name, posting.description)
-    except Exception as error:
-        logger.warning("Company lookup failed for %r; saving the name only: %s", name, error)
+    if look_up:
+        try:
+            with session.begin_nested():
+                return lookup_company(session, name, posting.description)
+        except Exception as error:
+            logger.warning("Company lookup failed for %r; saving the name only: %s", name, error)
     company = Company(name=name)
     session.add(company)
     session.flush()

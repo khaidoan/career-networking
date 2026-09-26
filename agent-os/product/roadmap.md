@@ -52,7 +52,7 @@ Enable the user to set up their profile and start discovering jobs automatically
 - [x] Invoke evaluator agent per new job
 - [x] Company lookup (DB first, then AI agent)
 - [x] Set `inbox_type` based on match score (recommended vs ignored)
-- [x] Scheduled run every 30 minutes via Docker Compose cron
+- [x] Scheduled run once a day via Docker Compose cron (was every 30 minutes; changed 2026-09-25)
 
 **Backend: Evaluator Agent (`evaluator.py`)**
 - [x] LangGraph-based evaluation of job vs. user preferences and skills

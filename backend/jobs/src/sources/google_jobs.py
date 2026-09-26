@@ -26,6 +26,7 @@ from src.vocabularies import COUNTRIES
 logger = logging.getLogger(__name__)
 
 SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
+DUE_GRACE = timedelta(hours=1)
 # Keep in sync with the "Google Jobs (optional)" section of the README.
 MAX_PAGES_PER_TITLE = 3
 SEARCH_LANGUAGE = "en"
@@ -63,9 +64,12 @@ def is_enabled(settings: Settings) -> bool:
 
 
 def is_due(settings: Settings, state: FetcherState, now: datetime) -> bool:
+    """Due once the interval has passed, less a small grace so a daily run that starts a few
+    seconds earlier than yesterday's is not skipped for a whole day."""
     last_run = state.get_google_jobs_last_run()
     interval = timedelta(hours=settings.google_jobs_interval_hours)
-    return last_run is None or now - last_run >= interval
+    grace = min(DUE_GRACE, interval / 10)
+    return last_run is None or now - last_run >= interval - grace
 
 
 def run_google_jobs(

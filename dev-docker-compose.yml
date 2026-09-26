@@ -55,7 +55,7 @@ services:
       <<: *healthcheck-timing
       start_period: 30s
 
-  # Job fetcher: the jobs image running `python -m src.fetcher` every 30 minutes
+  # Job fetcher: the jobs image running `python -m src.fetcher` once a day
   # (backend/jobs/crontab). Waits for a healthy jobs service, which has applied the migrations.
   # Fetch now, by hand:
   #   docker compose -f dev-docker-compose.yml exec fetcher python -m src.fetcher

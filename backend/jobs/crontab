@@ -1,3 +1,4 @@
 # [UNCONFIRMED: D6] supercronic schedule for the `fetcher` compose service.
-# Runs in /app with the service's environment; a run that overlaps another exits early.
-*/30 * * * * python -m src.fetcher
+# Once a day at 06:00 UTC. Runs in /app with the service's environment; a run that overlaps
+# another exits early.
+0 6 * * * python -m src.fetcher
