@@ -1,0 +1,10 @@
+{
+  "jobPostingInfo": {
+    "title": "Site Reliability Engineer",
+    "jobDescription": "<p>Keep production healthy.</p><p>On-call rotation.</p>",
+    "location": "Remote, USA",
+    "startDate": "2026-09-24",
+    "country": {"descriptor": "United States of America"}
+  },
+  "hiringOrganization": {"name": "Umbrella Inc."}
+}

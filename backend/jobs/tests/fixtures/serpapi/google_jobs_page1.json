@@ -1,0 +1,53 @@
+{
+  "search_metadata": {
+    "status": "Success"
+  },
+  "search_parameters": {
+    "engine": "google_jobs",
+    "q": "Backend Engineer"
+  },
+  "jobs_results": [
+    {
+      "title": "Backend Engineer",
+      "company_name": "Acme Corp",
+      "location": "Austin, TX",
+      "via": "LinkedIn",
+      "description": "Acme is hiring a Backend Engineer to design and operate Python services. Acme is hiring a Backend Engineer to design and operate Python services. Acme is hiring a Backend Engineer to design and operate Python services. Acme is hiring a Backend Engineer to design and operate Python services. Acme is hiring a Backend Engineer to design and operate Python services. Acme is hiring a Backend Engineer to design and operate Python services.",
+      "detected_extensions": {
+        "posted_at": "3 days ago",
+        "schedule_type": "Full-time"
+      },
+      "apply_options": [
+        {
+          "title": "LinkedIn",
+          "link": "https://www.linkedin.com/jobs/view/111"
+        },
+        {
+          "title": "Greenhouse",
+          "link": "https://job-boards.greenhouse.io/acme/jobs/101?gh_src=google"
+        }
+      ],
+      "job_id": "job-1"
+    },
+    {
+      "title": "Backend Engineer II",
+      "company_name": "Contoso",
+      "location": "Remote",
+      "via": "via Indeed",
+      "description": "Join Contoso to build billing APIs\u2026",
+      "detected_extensions": {
+        "posted_at": "30+ days ago"
+      },
+      "apply_options": [
+        {
+          "title": "Contoso Careers",
+          "link": "https://careers.contoso.example/jobs/9"
+        }
+      ],
+      "job_id": "job-2"
+    }
+  ],
+  "serpapi_pagination": {
+    "next_page_token": "token-page-2"
+  }
+}

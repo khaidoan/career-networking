@@ -1,0 +1,15 @@
+[
+  {
+    "id": "7f3c2a10-aaaa-bbbb-cccc-1234567890ab",
+    "text": "Data Engineer",
+    "hostedUrl": "https://jobs.lever.co/globex/7f3c2a10-aaaa-bbbb-cccc-1234567890ab",
+    "createdAt": 1790157600000,
+    "country": "CA",
+    "workplaceType": "hybrid",
+    "categories": {"location": "Toronto", "allLocations": ["Toronto", "Vancouver"], "commitment": "Full-time"},
+    "descriptionPlain": "Own our data pipelines.",
+    "lists": [{"text": "Requirements", "content": "<li>SQL</li><li>Airflow</li>"}],
+    "additionalPlain": "We sponsor visas."
+  },
+  {"id": "no-url", "text": "Broken posting"}
+]

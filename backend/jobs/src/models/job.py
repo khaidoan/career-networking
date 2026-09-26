@@ -50,6 +50,8 @@ class Job(TimestampMixin, Base):
     experience_score: Mapped[int | None] = mapped_column(Integer)
     skill_score: Mapped[int | None] = mapped_column(Integer)
     industry_exp_score: Mapped[int | None] = mapped_column(Integer)
+    # Why the evaluator failed; null for jobs that were scored.
+    evaluation_error: Mapped[str | None] = mapped_column(Text)
 
     inbox_type: Mapped[str] = mapped_column(
         Text,

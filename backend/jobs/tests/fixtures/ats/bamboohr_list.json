@@ -1,0 +1,9 @@
+{
+  "meta": {"totalCount": 1},
+  "result": [
+    {"id": "42", "jobOpeningName": "Customer Success Manager", "departmentLabel": "Support",
+     "employmentStatusLabel": "Full-Time", "location": {"city": "Denver", "state": "Colorado"},
+     "atsLocation": {"country": "United States", "state": "Colorado", "city": "Denver"}, "isRemote": null},
+    {"id": "", "jobOpeningName": "No id"}
+  ]
+}

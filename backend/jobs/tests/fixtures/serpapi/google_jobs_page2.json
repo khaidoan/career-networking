@@ -1,0 +1,27 @@
+{
+  "search_metadata": {
+    "status": "Success"
+  },
+  "jobs_results": [
+    {
+      "title": "Senior Backend Engineer",
+      "company_name": "Globex",
+      "location": "Toronto, ON, Canada",
+      "via": "Glassdoor",
+      "description": "Short snippet\u2026",
+      "apply_options": [
+        {
+          "title": "Lever",
+          "link": "https://jobs.lever.co/globex/7f3c2a10-aaaa-bbbb-cccc-1234567890ab/apply"
+        }
+      ],
+      "job_id": "job-3"
+    },
+    {
+      "title": "No apply link",
+      "company_name": "Nowhere",
+      "apply_options": [],
+      "job_id": "job-4"
+    }
+  ]
+}

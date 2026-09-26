@@ -37,11 +37,28 @@ class Settings(BaseSettings):
     job_data: Path
     log_folder: Path
 
+    # One LiteLLM model string shared by every agent, e.g. "openai/gpt-4o-mini".
+    # Provider keys (OPENAI_API_KEY, ...) are read by LiteLLM from the environment directly.
+    llm_model: str = Field(min_length=1)
+    llm_api_base: str | None = None
+
+    match_threshold: int = Field(default=70, ge=0, le=100)
+    google_jobs_interval_hours: int = Field(default=24, gt=0)
+    serpapi_api_key: SecretStr | None = Field(default=None, validation_alias="SERPAPI_API_KEY")
+
     @field_validator("jwt_secret")
     @classmethod
     def _jwt_secret_is_long_enough(cls, value: SecretStr) -> SecretStr:
         if len(value.get_secret_value()) < MIN_JWT_SECRET_LENGTH:
             raise ValueError(f"must be at least {MIN_JWT_SECRET_LENGTH} characters")
+        return value
+
+    @field_validator("llm_api_base", "serpapi_api_key", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        # .env.example ships these as empty lines; treat "" as "not configured".
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @property
@@ -62,11 +79,20 @@ class Settings(BaseSettings):
         return self.login_window_minutes * 60
 
 
+# Settings read from an unprefixed environment variable through a validation alias.
+UNPREFIXED_VARIABLES = {"SERPAPI_API_KEY"}
+
+
+def _variable_name(location: object) -> str:
+    name = str(location)
+    return name if name in UNPREFIXED_VARIABLES else ENV_PREFIX + name.upper()
+
+
 def _describe_errors(error: ValidationError) -> str:
     missing: list[str] = []
     invalid: list[str] = []
     for item in error.errors(include_input=False):
-        variable = ENV_PREFIX + str(item["loc"][0]).upper()
+        variable = _variable_name(item["loc"][0])
         if item["type"] == "missing":
             missing.append(variable)
         else:

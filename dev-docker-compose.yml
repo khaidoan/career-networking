@@ -55,6 +55,24 @@ services:
       <<: *healthcheck-timing
       start_period: 30s
 
+  # Job fetcher: the jobs image running `python -m src.fetcher` every 30 minutes
+  # (backend/jobs/crontab). Waits for a healthy jobs service, which has applied the migrations.
+  # Fetch now, by hand:
+  #   docker compose -f dev-docker-compose.yml exec fetcher python -m src.fetcher
+  fetcher:
+    build: ./backend/jobs
+    env_file: .env
+    # [UNCONFIRMED: D6] supercronic is the scheduler; each run imports the mounted source.
+    command: ["supercronic", "-passthrough-logs", "/app/crontab"]
+    volumes:
+      - ./backend/jobs:/app
+      - ./backend/data/resume:/opt/career_networking/resume
+      - ./backend/data/jobs:/opt/career_networking/jobs
+      - ./backend/logs:/opt/career_networking/logs
+    depends_on:
+      jobs:
+        condition: service_healthy
+
   frontend:
     # The Dockerfile's `deps` stage has Node, pnpm and the installed node_modules.
     build:

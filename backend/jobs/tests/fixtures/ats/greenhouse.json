@@ -1,0 +1,57 @@
+{
+  "jobs": [
+    {
+      "id": 101,
+      "title": "Senior Backend Engineer",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/101",
+      "company_name": "Acme Corp",
+      "location": {"name": "Austin, Texas"},
+      "first_published": "2026-09-23T10:00:00-04:00",
+      "content": "&lt;p&gt;Build &amp;amp; ship APIs in Python.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;5+ years&lt;/li&gt;&lt;/ul&gt;"
+    },
+    {
+      "id": 102,
+      "title": "Backend Engineer",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/102",
+      "company_name": "Acme Corp",
+      "location": {"name": "London, UK"},
+      "first_published": "2026-09-24T09:00:00Z",
+      "content": "&lt;p&gt;London role.&lt;/p&gt;"
+    },
+    {
+      "id": 103,
+      "title": "Backend Engineer, Platform",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/103",
+      "company_name": "Acme Corp",
+      "location": {"name": "Remote"},
+      "content": "&lt;p&gt;Undated role.&lt;/p&gt;"
+    },
+    {
+      "id": 104,
+      "title": "Staff Backend Engineer",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/104",
+      "company_name": "Acme Corp",
+      "location": {"name": "Remote - US"},
+      "first_published": "2026-08-01T09:00:00Z",
+      "content": "&lt;p&gt;Old role.&lt;/p&gt;"
+    },
+    {
+      "id": 105,
+      "title": "Product Designer",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/105",
+      "company_name": "Acme Corp",
+      "location": {"name": "New York, NY"},
+      "first_published": "2026-09-24T09:00:00Z",
+      "content": "&lt;p&gt;Design role.&lt;/p&gt;"
+    },
+    {
+      "id": 106,
+      "title": "Backend Engineer (Remote)",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/106",
+      "company_name": "Acme Corp",
+      "location": {"name": "Remote"},
+      "first_published": "2026-09-24T12:00:00Z",
+      "content": "&lt;p&gt;Remote anywhere.&lt;/p&gt;"
+    }
+  ]
+}

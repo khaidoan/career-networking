@@ -41,26 +41,26 @@ Enable the user to set up their profile and start discovering jobs automatically
 ### Deliverables
 
 **Profile / Settings / Preferences Page**
-- Resume upload (.docx or .pdf) — stored to disk and converted to text
-- AI extraction of desired title, hard skills, soft skills from resume
-- All preference fields: desired titles, country, currency, salary ranges, seniority, address, gender, EEO questions
-- Delete existing resume functionality
+- [x] Resume upload (.docx or .pdf) — stored to disk and converted to text
+- [x] AI extraction of desired title, hard skills, soft skills from resume
+- [x] All preference fields: desired titles, country, currency, salary ranges, seniority, address, gender, EEO questions
+- [x] Delete existing resume functionality
 
 **Backend: Job Fetcher (`fetcher.py`)**
-- Integration with all job boards/ATS supported by Career-Ops
-- Deduplication by URL before insert
-- Invoke evaluator agent per new job
-- Company lookup (DB first, then AI agent)
-- Set `inbox_type` based on match score (recommended vs ignored)
-- Scheduled run every 30 minutes via Docker Compose cron
+- [x] Integration with all job boards/ATS supported by Career-Ops
+- [x] Deduplication by URL before insert
+- [x] Invoke evaluator agent per new job
+- [x] Company lookup (DB first, then AI agent)
+- [x] Set `inbox_type` based on match score (recommended vs ignored)
+- [x] Scheduled run every 30 minutes via Docker Compose cron
 
 **Backend: Evaluator Agent (`evaluator.py`)**
-- LangGraph-based evaluation of job vs. user preferences and skills
-- Populate scoring columns: overall_score, experience_score, skill_score, industry_exp_score
-- Extract: compensation_range, work_arrangement, job_type_classification, seniority_level, year_exp, visa_sponsorship, location fields
+- [x] LangGraph-based evaluation of job vs. user preferences and skills
+- [x] Populate scoring columns: overall_score, experience_score, skill_score, industry_exp_score
+- [x] Extract: compensation_range, work_arrangement, job_type_classification, seniority_level, year_exp, visa_sponsorship, location fields
 
 **Backend: Company Lookup Agent (`company_lookup.py`)**
-- Given company name + optional job description, use LLM to populate companies table
+- [x] Given company name + optional job description, use LLM to populate companies table
 
 ---
 
@@ -75,12 +75,14 @@ Display discovered jobs in an actionable inbox interface.
 - Card-based job list (no HTML tables)
 - Alternating card background colors
 - Per-card: title, company, industry, growth stage, location, work arrangement, job type, salary range, seniority, years exp, match strength, visa sponsorship indicator
+- Jobs whose AI evaluation failed (Ignored inbox, no scores) show a "Not scored" marker with the failure reason from `jobs.evaluation_error`
 - Heart icon to like/unlike jobs
 - Filters: seniority level, work arrangement, job type classification, visa sponsorship
 - Search by company name
 
 **Job Details Page**
 - Company name, job title, visa sponsorship, location, arrangement, type, seniority, years, scores
+- When evaluation failed: a notice with the failure reason (`jobs.evaluation_error`) in place of the scores
 - Full job description
 - Networking / Outreach section (contacts from company_networking)
 - Click name → open LinkedIn + copy connection request message to clipboard

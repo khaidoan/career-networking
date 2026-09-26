@@ -1,0 +1,18 @@
+{
+  "total": 2,
+  "jobPostings": [
+    {
+      "title": "Site Reliability Engineer",
+      "externalPath": "/job/Remote-USA/Site-Reliability-Engineer_R123",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": ["R123"]
+    },
+    {
+      "title": "Old Engineer",
+      "externalPath": "/job/Chicago-IL/Old-Engineer_R001",
+      "locationsText": "3 Locations",
+      "postedOn": "Posted 30+ Days Ago"
+    }
+  ]
+}
