@@ -25,7 +25,7 @@ Rather than optimizing for ATS filtering, Career Networking focuses on **human c
 **Primary:** Individual job seekers who want to take a proactive, networking-first approach to their job search. They are comfortable self-hosting a Docker-based application on their own machine.
 
 **Key traits:**
-- Values data privacy (all data stays on their machine)
+- Values data privacy (data is stored on their machine; what reaches an AI provider is their choice)
 - Willing to use their own AI API credits (or local models via LiteLLM)
 - Prefers networking over blind applications
 - Technically capable of running Docker Compose
@@ -36,7 +36,7 @@ Pay-what-you-can after getting a job. No subscription, no SaaS fees, no data har
 
 ## Core Principles
 
-1. **Privacy first** — All data is self-hosted; nothing leaves the user's machine
+1. **Privacy first** — All data is stored on the user's machine. Anything on the Profile / Preferences page may be sent to the configured AI model; users who need full privacy check their provider's data policy or run a local model
 2. **Single user** — No multi-tenancy; designed for one person per installation
 3. **Networking over applying** — The primary goal is human connection, not ATS optimization
 4. **User control** — Manual actions (connect on LinkedIn, apply to jobs) are preferred over fully automated flows

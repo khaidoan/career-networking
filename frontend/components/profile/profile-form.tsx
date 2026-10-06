@@ -14,6 +14,7 @@ import { JobFetchingStatus } from "@/components/profile/job-fetching-status";
 import { JobPreferencesSection } from "@/components/profile/job-preferences-section";
 import { OtherSection } from "@/components/profile/other-section";
 import { PersonalEeoSection } from "@/components/profile/personal-eeo-section";
+import { RelocationSection } from "@/components/profile/relocation-section";
 import { ResumeCard } from "@/components/profile/resume-card";
 import { SetupDialog } from "@/components/profile/setup-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -52,6 +53,9 @@ type SaveStatus =
 /** Form keys whose API (and error) name differs. */
 const FORM_TO_API_FIELD: Record<string, string> = {
   excludedTitleWords: "excluded_title_words",
+  willingToRelocate: "willing_to_relocate",
+  excludedRelocationPlaces: "excluded_relocation_places",
+  maxCommuteMiles: "max_commute_miles",
   salaryMin: "salary_min",
   salaryMax: "salary_max",
   fetchTime: "fetch_time",
@@ -149,7 +153,14 @@ export function ProfileForm() {
 
   function handleUploaded(upload: ResumeUpload) {
     setSaved(upload.preferences);
-    if (!upload.suggestions || !values) {
+    if (!values) {
+      return;
+    }
+    if (!upload.suggestions) {
+      // The model failed, but the server may still have read the address from the resume.
+      setValues(
+        applyResumeDefaults(values, upload.preferences, detectedCountry),
+      );
       return;
     }
     // The server already saved the suggestions; merging them into the form (rather than taking
@@ -274,6 +285,12 @@ export function ProfileForm() {
           errors={errors}
           onChange={update}
           detectedCountry={saved.country ? undefined : detectedCountry}
+        />
+        <RelocationSection
+          values={values}
+          errors={errors}
+          onChange={update}
+          check={saved.relocation_check}
         />
         <PersonalEeoSection values={values} errors={errors} onChange={update} />
         <OtherSection

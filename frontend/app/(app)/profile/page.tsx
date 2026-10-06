@@ -15,6 +15,11 @@ export default function ProfilePage() {
           Your resume and job preferences decide which jobs are fetched and how
           they are scored.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Anything on this page may be sent to the AI model set up for this app.
+          If that is a privacy concern, check your model provider&apos;s data
+          policy, or set up a local model.
+        </p>
       </header>
       <ProfileForm />
     </div>

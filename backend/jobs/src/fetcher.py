@@ -54,6 +54,7 @@ from src.sources.filters import (
     SearchCriteria,
     is_recent,
     location_matches,
+    relocation_matches,
     seniority_matches,
     title_matches,
 )
@@ -308,6 +309,7 @@ class FetcherRun:
             )
             and seniority_matches(posting.title, self.criteria.seniority)
             and location_matches(posting.location, self.criteria.country)
+            and relocation_matches(posting.location, self.criteria)
             and is_recent(posting.published_at, self.now)
         )
 

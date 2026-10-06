@@ -27,6 +27,11 @@ class Preferences(TimestampMixin, Base):
     salary_max: Mapped[int | None] = mapped_column(Integer)
     seniority: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     address: Mapped[str | None] = mapped_column(Text)
+    # None until answered. When False, max_commute_miles (from the address's city) limits jobs.
+    willing_to_relocate: Mapped[bool | None] = mapped_column(Boolean)
+    # States or cities ("Texas", "Austin, TX") the user will not relocate to.
+    excluded_relocation_places: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    max_commute_miles: Mapped[int | None] = mapped_column(Integer)
     resume_location: Mapped[str | None] = mapped_column(Text)
     resume_filename: Mapped[str | None] = mapped_column(Text)
     resume_text: Mapped[str | None] = mapped_column(Text)

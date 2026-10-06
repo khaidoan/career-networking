@@ -28,8 +28,10 @@ Return:
 - country: the ISO 3166-1 alpha-2 code of the country the candidate lives in, from their address
   or, failing that, their most recent job location (for example "US", "GB"). Use null when the
   resume does not make it clear.
-- address: the candidate's postal address exactly as written in the resume (street, city,
-  region, postal code and country, as far as given), on one line. Use null when there is none.
+- address: where the candidate lives, as written in the resume (usually in the header), on one
+  line: street if given, then city, state or region, ZIP or postal code, and country if given,
+  for example "123 Main St, San Jose, CA 95112" or "San Jose, CA 95112". When the resume gives
+  only a city and state, return those. Use null only when the resume gives no home location.
 - hard_skills: concrete technical or domain skills, tools, languages and certifications named
   or clearly demonstrated in the resume.
 - soft_skills: interpersonal and working-style skills evidenced in the resume (for example

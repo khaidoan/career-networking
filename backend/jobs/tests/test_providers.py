@@ -15,6 +15,7 @@ from src.sources.filters import SearchCriteria, location_matches
 from src.sources.providers import PROVIDERS, detect_board, get_provider
 from src.sources.providers.base import BoardRef, HttpClient, Posting, company_for
 from src.sources.providers.workday import strip_entity_code
+from src.sources.relocation import RelocationRules, parse_excluded_places
 from src.sources.state import FileFetcherState
 from src.vocabularies import ATS_PROVIDERS
 from tests.conftest import FakeHttp, fixture_json, fixture_text
@@ -162,6 +163,24 @@ def test_board_scan_drops_titles_with_an_excluded_word(fake_http: FakeHttp) -> N
 
     # Job 106, "Backend Engineer (Remote)", is skipped; job 101 is still kept.
     assert [posting.url.rsplit("/", 1)[1] for posting in scan.matches] == ["101"]
+
+
+def test_board_scan_drops_postings_in_places_the_user_will_not_relocate_to(
+    fake_http: FakeHttp,
+) -> None:
+    fake_http.add(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        json=fixture_json("ats/greenhouse.json"),
+    )
+    board = get_provider("greenhouse").board_ref("acme")
+    excluded = parse_excluded_places(["Texas"], "US")
+    criteria = replace(BACKEND_US, relocation=RelocationRules("US", excluded))
+
+    with fake_http.client() as client:
+        scan = scan_board(board, criteria, client, NOW)
+
+    # Job 101 is in Austin, Texas; job 106 is remote, so it is kept.
+    assert [posting.url.rsplit("/", 1)[1] for posting in scan.matches] == ["106"]
 
 
 @pytest.mark.parametrize(

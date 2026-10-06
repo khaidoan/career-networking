@@ -6,6 +6,10 @@ import type { Preferences } from "@/lib/api/preferences";
 const EMPTY: Preferences = {
   desired_titles: [],
   excluded_title_words: [],
+  willing_to_relocate: null,
+  excluded_relocation_places: [],
+  max_commute_miles: null,
+  relocation_check: { home: null, unrecognized_places: [] },
   hard_skills: [],
   soft_skills: [],
   country: null,
@@ -52,7 +56,7 @@ describe("applyResumeDefaults", () => {
     });
   });
 
-  it("keeps values the user chose", () => {
+  it("keeps values the user chose, except the address, which follows the resume", () => {
     const chosen = {
       ...toFormValues(EMPTY),
       seniority: ["mid"],
@@ -64,7 +68,7 @@ describe("applyResumeDefaults", () => {
       seniority: ["mid"],
       country: "CA",
       currency: "USD",
-      address: "9 Queen Street, Toronto",
+      address: "1 King Street, London",
     });
     // A currency picked by hand survives replacing the guessed country.
     expect(

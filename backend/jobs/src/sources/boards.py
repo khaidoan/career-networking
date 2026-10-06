@@ -13,6 +13,7 @@ from src.sources.filters import (
     is_recent,
     location_matches,
     recency_cutoff,
+    relocation_matches,
     seniority_matches,
     title_matches,
 )
@@ -91,15 +92,19 @@ def _keep(
     if posting.published_at is not None and not is_recent(posting.published_at, now):
         return False
     location_pending = posting.extra.get("location_pending", False)
-    if not location_pending and not location_matches(
-        posting.location, criteria.country, allow_bare_remote=allow_bare_remote
-    ):
+    if not location_pending and not _location_ok(posting, criteria, allow_bare_remote):
         return False
     if location_pending or posting.published_at is None or not posting.description:
         _enrich(posting, provider, client)
+    return _location_ok(posting, criteria, allow_bare_remote) and is_recent(
+        posting.published_at, now
+    )
+
+
+def _location_ok(posting: Posting, criteria: SearchCriteria, allow_bare_remote: bool) -> bool:
     return location_matches(
         posting.location, criteria.country, allow_bare_remote=allow_bare_remote
-    ) and is_recent(posting.published_at, now)
+    ) and relocation_matches(posting.location, criteria)
 
 
 def _enrich(posting: Posting, provider: AtsProvider, client: HttpClient) -> None:

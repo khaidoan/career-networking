@@ -7,6 +7,12 @@ export type Option = { value: string; label: string };
 
 export const DECLINE_TO_ANSWER = "decline_to_answer";
 
+/** Form values for `willing_to_relocate` (`true`/`false`); empty means not answered. */
+export const RELOCATION_OPTIONS: readonly Option[] = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+];
+
 export const SENIORITY_OPTIONS: readonly Option[] = [
   { value: "intern", label: "Intern" },
   { value: "entry", label: "Entry level" },

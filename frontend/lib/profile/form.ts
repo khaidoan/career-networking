@@ -27,6 +27,7 @@ export const MAX_TAGS = 50;
 export const MAX_TAG_LENGTH = 100;
 export const MAX_ADDRESS_LENGTH = 1000;
 export const MAX_ADDITIONAL_INFORMATION_LENGTH = 20000;
+export const MAX_COMMUTE_MILES = 1000;
 
 /** Server default and format (`src/schedule.py`): "HH:MM", 24-hour. */
 export const DEFAULT_FETCH_TIME = "06:00";
@@ -41,6 +42,11 @@ export type ProfileFormValues = Record<TagField, string[]> & {
   seniority: string[];
   address: string;
   gender: string;
+  /** "yes", "no" or "" (not answered). */
+  willingToRelocate: string;
+  /** One place per line. */
+  excludedRelocationPlaces: string;
+  maxCommuteMiles: string;
   eeoAnswers: Record<EeoQuestionKey, string>;
   additionalInformation: string;
   autoApply: boolean;
@@ -110,9 +116,10 @@ export function applySuggestions(
 }
 
 /**
- * Take the seniority, country, currency and address the server filled in from a resume for the
- * fields still empty in the form. A country guessed from the browser (`guessedCountry`, not saved)
- * counts as empty, and so does the currency that guess filled in.
+ * Take the seniority, country and currency the server filled in from a resume for the fields
+ * still empty in the form, and always the address it read from the resume. A country guessed
+ * from the browser (`guessedCountry`, not saved) counts as empty, and so does the currency that
+ * guess filled in.
  */
 export function applyResumeDefaults(
   values: ProfileFormValues,
@@ -123,7 +130,7 @@ export function applyResumeDefaults(
   if (next.seniority.length === 0) {
     next.seniority = saved.seniority;
   }
-  if (!next.address.trim() && saved.address) {
+  if (saved.address) {
     next.address = saved.address;
   }
   const countryIsGuess =
@@ -156,6 +163,16 @@ export function toFormValues(preferences: Preferences): ProfileFormValues {
     seniority: preferences.seniority ?? [],
     address: preferences.address ?? "",
     gender: preferences.gender ?? "",
+    willingToRelocate:
+      preferences.willing_to_relocate == null
+        ? ""
+        : preferences.willing_to_relocate
+          ? "yes"
+          : "no",
+    excludedRelocationPlaces: (
+      preferences.excluded_relocation_places ?? []
+    ).join("\n"),
+    maxCommuteMiles: preferences.max_commute_miles?.toString() ?? "",
     eeoAnswers,
     additionalInformation: preferences.additional_information ?? "",
     autoApply: preferences.auto_apply ?? false,
@@ -164,7 +181,7 @@ export function toFormValues(preferences: Preferences): ProfileFormValues {
   };
 }
 
-function parseSalary(value: string): number | null | "invalid" {
+function parseWholeNumber(value: string): number | null | "invalid" {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
@@ -180,8 +197,8 @@ const WHOLE_NUMBER_MESSAGE = "Enter a whole number of 0 or more.";
  */
 export function validate(values: ProfileFormValues): FieldErrors {
   const errors: FieldErrors = {};
-  const min = parseSalary(values.salaryMin);
-  const max = parseSalary(values.salaryMax);
+  const min = parseWholeNumber(values.salaryMin);
+  const max = parseWholeNumber(values.salaryMax);
   if (min === "invalid") {
     errors.salary_min = WHOLE_NUMBER_MESSAGE;
   }
@@ -190,6 +207,15 @@ export function validate(values: ProfileFormValues): FieldErrors {
   }
   if (typeof min === "number" && typeof max === "number" && min > max) {
     errors.salary_max = "Must be greater than or equal to the minimum salary.";
+  }
+  const commute = parseWholeNumber(values.maxCommuteMiles);
+  if (
+    values.willingToRelocate === "no" &&
+    (commute === "invalid" ||
+      (typeof commute === "number" &&
+        (commute < 1 || commute > MAX_COMMUTE_MILES)))
+  ) {
+    errors.max_commute_miles = `Enter a whole number of miles from 1 to ${MAX_COMMUTE_MILES}.`;
   }
   if (!FETCH_TIME_PATTERN.test(values.fetchTime)) {
     errors.fetch_time = "Enter a time, for example 06:00.";
@@ -202,8 +228,8 @@ export function validate(values: ProfileFormValues): FieldErrors {
 
 /** API payload for `PUT /preferences`; call only after `validate` returned no errors. */
 export function toUpdate(values: ProfileFormValues): PreferencesUpdate {
-  const salary = (value: string) => {
-    const parsed = parseSalary(value);
+  const wholeNumber = (value: string) => {
+    const parsed = parseWholeNumber(value);
     return typeof parsed === "number" ? parsed : null;
   };
   const eeoAnswers = Object.fromEntries(
@@ -216,11 +242,23 @@ export function toUpdate(values: ProfileFormValues): PreferencesUpdate {
     soft_skills: values.soft_skills,
     country: values.country || null,
     currency: values.currency || null,
-    salary_min: salary(values.salaryMin),
-    salary_max: salary(values.salaryMax),
+    salary_min: wholeNumber(values.salaryMin),
+    salary_max: wholeNumber(values.salaryMax),
     seniority: values.seniority,
     address: values.address.trim() || null,
     gender: values.gender || null,
+    willing_to_relocate:
+      values.willingToRelocate === ""
+        ? null
+        : values.willingToRelocate === "yes",
+    excluded_relocation_places: values.excludedRelocationPlaces
+      .split("\n")
+      .map((place) => place.trim())
+      .filter(Boolean),
+    max_commute_miles:
+      values.willingToRelocate === "no"
+        ? wholeNumber(values.maxCommuteMiles)
+        : null,
     eeo_answers: eeoAnswers,
     additional_information: values.additionalInformation.trim() || null,
     auto_apply: values.autoApply,

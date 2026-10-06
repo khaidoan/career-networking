@@ -1,4 +1,4 @@
-"""Title, seniority, country and recency filters applied to every posting before the LLM.
+"""Title, seniority, country, relocation and recency filters applied before the LLM.
 
 These checks are free; only postings that pass them reach the evaluator, so they are where token
 spend is controlled. Every rule errs on the side of keeping a posting: when a check cannot tell,
@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 
 from src.models import Preferences
 from src.sources.locations import countries_in, is_remote
+from src.sources.relocation import RelocationRules, relocation_rules
 from src.vocabularies import SENIORITY_LEVELS
 
 RECENCY_WINDOW = timedelta(hours=24)
@@ -53,6 +54,8 @@ class SearchCriteria:
     seniority: tuple[str, ...] = ()
     # A title containing every word of one of these is skipped, even if it matches a title.
     excluded_title_words: tuple[str, ...] = ()
+    # Places the user will not relocate to and their commute limit; ``None`` when unset.
+    relocation: RelocationRules | None = None
 
     @classmethod
     def from_preferences(cls, preferences: Preferences | None) -> "SearchCriteria | None":
@@ -71,6 +74,7 @@ class SearchCriteria:
             country=preferences.country,
             seniority=seniority,
             excluded_title_words=excluded,
+            relocation=relocation_rules(preferences),
         )
 
 
@@ -154,10 +158,17 @@ def is_recent(published_at: datetime | None, now: datetime) -> bool:
     return published_at is not None and published_at >= recency_cutoff(now)
 
 
+def relocation_matches(location: str, criteria: SearchCriteria) -> bool:
+    """False only when the location is clearly somewhere the user will not work (see
+    ``src.sources.relocation``)."""
+    return criteria.relocation is None or criteria.relocation.allows(location)
+
+
 def matches_title_and_location(title: str, location: str, criteria: SearchCriteria) -> bool:
     """The cheap checks, run before any extra request is spent on a posting."""
     return (
         title_matches(title, criteria.desired_titles, criteria.excluded_title_words)
         and seniority_matches(title, criteria.seniority)
         and location_matches(location, criteria.country)
+        and relocation_matches(location, criteria)
     )

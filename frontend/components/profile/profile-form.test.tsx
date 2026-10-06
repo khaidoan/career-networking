@@ -22,6 +22,10 @@ vi.mock("@/lib/profile/timezones", async (importOriginal) => ({
 const EMPTY_PREFERENCES: Preferences = {
   desired_titles: [],
   excluded_title_words: [],
+  willing_to_relocate: null,
+  excluded_relocation_places: [],
+  max_commute_miles: null,
+  relocation_check: { home: null, unrecognized_places: [] },
   hard_skills: [],
   soft_skills: [],
   country: null,
@@ -115,6 +119,10 @@ describe("ProfileForm", () => {
         .map((item) => item.textContent),
     ).toEqual(["Choose the daily time (and time zone) to fetch new jobs."]);
     await dismissSetup(user);
+    // Relocation is not answered, so no commute limit is asked for.
+    expect(
+      screen.queryByLabelText("Maximum commute (miles)"),
+    ).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Hard skills"), "Python{Enter}");
     await user.type(
       screen.getByLabelText("Excluded title words"),
@@ -336,8 +344,10 @@ describe("ProfileForm", () => {
           suggestions: null,
           warning:
             "Your resume was saved, but suggestions could not be generated right now.",
+          // The server still read the address from the resume header.
           preferences: {
             ...EMPTY_PREFERENCES,
+            address: "San Jose, CA 95112",
             resume: { ...RESUME, file_name: "cv.pdf" },
           },
         }),
@@ -377,6 +387,7 @@ describe("ProfileForm", () => {
       ),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/suggestions? added/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Address")).toHaveValue("San Jose, CA 95112");
   });
 
   it("pre-fills a detected country and its currency until a country is saved", async () => {
@@ -491,6 +502,67 @@ describe("ProfileForm", () => {
       await screen.findByText("Enter a time, for example 06:00."),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for a commute limit only when not relocating and saves the relocation answers", async () => {
+    const saved: Preferences = {
+      ...EMPTY_PREFERENCES,
+      desired_titles: ["Backend Engineer"],
+      country: "US",
+      resume: RESUME,
+      fetch_time: "06:00",
+      fetch_timezone: "America/Chicago",
+      address: "1 Congress Ave, Austin, TX 78701",
+      willing_to_relocate: false,
+      excluded_relocation_places: ["California", "Bay Area"],
+      max_commute_miles: 30,
+      relocation_check: {
+        home: "Austin, Texas",
+        unrecognized_places: ["Bay Area"],
+      },
+    };
+    const fetchMock = mockApi({
+      "GET /api/v1/preferences": () => json(saved),
+      "PUT /api/v1/preferences": (init) =>
+        json({ ...saved, ...JSON.parse(String(init.body)) }),
+    });
+    const user = userEvent.setup();
+
+    render(<ProfileForm />);
+    const commute = await screen.findByLabelText("Maximum commute (miles)");
+    expect(commute).toHaveValue(30);
+    expect(commute).toHaveAccessibleDescription(
+      "Measured in a straight line from Austin, Texas, the city in your saved address. Jobs farther away are skipped.",
+    );
+    const places = screen.getByLabelText("Places I will not relocate to");
+    expect(places).toHaveValue("California\nBay Area");
+    expect(
+      screen.getByText(/Not recognized, so not used: Bay Area\./),
+    ).toBeInTheDocument();
+
+    await user.clear(commute);
+    await user.type(commute, "0");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText("Enter a whole number of miles from 1 to 1000."),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await user.clear(commute);
+    await user.type(commute, "25");
+    await user.clear(places);
+    await user.type(places, "California{Enter}  Seattle, WA {Enter}{Enter}");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Your profile was saved."),
+    ).toBeInTheDocument();
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
+      willing_to_relocate: false,
+      excluded_relocation_places: ["California", "Seattle, WA"],
+      max_commute_miles: 25,
+    });
   });
 
   it("says whether job fetching is enabled, from the saved profile", async () => {

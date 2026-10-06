@@ -59,6 +59,12 @@ export type PreferencesUpdate = {
   seniority: string[];
   address: string | null;
   gender: string | null;
+  /** `null` until answered. */
+  willing_to_relocate: boolean | null;
+  /** States or cities ("Texas", "Austin, TX") the user will not relocate to. */
+  excluded_relocation_places: string[];
+  /** Applied by the fetcher only when `willing_to_relocate` is `false`. */
+  max_commute_miles: number | null;
   eeo_answers: EeoAnswers;
   /**
    * Free text from the "Other" section: a long-form resume plus application facts, used to fill
@@ -94,6 +100,15 @@ export type Preferences = Omit<
   fetch_timezone: string | null;
   resume: ResumeInfo | null;
   job_fetching: JobFetchingStatus;
+  relocation_check: RelocationCheck;
+};
+
+/** How the server reads the saved address and relocation places. */
+export type RelocationCheck = {
+  /** The home city found in the address ("Austin, Texas"), or `null`. */
+  home: string | null;
+  /** Saved places that name no known state or city, so the fetcher ignores them. */
+  unrecognized_places: string[];
 };
 
 export type ResumeSuggestions = {

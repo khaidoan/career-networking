@@ -21,7 +21,7 @@ export function PersonalEeoSection({ values, errors, onChange }: SectionProps) {
       id="personal"
       title="Personal & EEO"
       icon={UserRound}
-      description="Optional. Your address, gender, race, veteran and disability answers are never sent to the AI model."
+      description="Optional. Used to fill in applications; the city and state in your address also set where commutes are measured from."
     >
       <div className="flex flex-col gap-2">
         <Label htmlFor="address">Address</Label>

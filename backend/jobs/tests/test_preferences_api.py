@@ -149,6 +149,10 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
         "salary_max": 150000,
         "seniority": ["senior", "staff_principal", "senior"],
         "gender": "decline_to_answer",
+        "address": "1 Congress Ave, Austin, TX 78701",
+        "willing_to_relocate": False,
+        "excluded_relocation_places": ["California", "Bay Area"],
+        "max_commute_miles": 30,
         "eeo_answers": {"work_authorization": "authorized", "veteran_status": "decline_to_answer"},
         "auto_apply": True,
         "fetch_time": "07:30",
@@ -162,6 +166,13 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
     body = response.json()
     assert body["desired_titles"] == ["Backend Engineer", "Platform Engineer"]
     assert body["excluded_title_words"] == ["QA", "Site Reliability"]
+    assert body["willing_to_relocate"] is False and body["max_commute_miles"] == 30
+    assert body["excluded_relocation_places"] == ["California", "Bay Area"]
+    # The page shows where commutes are measured from and which places are not recognised.
+    assert body["relocation_check"] == {
+        "home": "Austin, Texas",
+        "unrecognized_places": ["Bay Area"],
+    }
     assert db.rows[1].excluded_title_words == ["QA", "Site Reliability"]
     assert body["country"] == "US"
     assert body["seniority"] == ["senior", "staff_principal"]
@@ -185,6 +196,7 @@ def test_put_rejects_invalid_values_with_field_level_detail(signed_in: TestClien
         PREFERENCES_URL,
         json={
             "additional_information": "x" * 20_001,
+            "max_commute_miles": 0,
             "salary_min": 200000,
             "salary_max": 100000,
             "country": "XX",
@@ -201,6 +213,7 @@ def test_put_rejects_invalid_values_with_field_level_detail(signed_in: TestClien
     assert ("seniority", 0) in fields
     assert ("fetch_time",) in fields and ("fetch_timezone",) in fields
     assert ("additional_information",) in fields
+    assert ("max_commute_miles",) in fields
 
 
 def test_put_requires_the_fetch_time_and_time_zone(signed_in: TestClient) -> None:
@@ -340,7 +353,7 @@ def test_docx_upload_needs_a_zip_containing_the_word_document_part(
     assert 1 not in db.rows
 
 
-def test_upload_fills_empty_country_currency_and_seniority_but_keeps_chosen_ones(
+def test_upload_fills_empty_country_currency_and_seniority_and_always_replaces_the_address(
     signed_in: TestClient,
     db: FakeSession,
     suggestions: list[ResumeSuggestions | Exception],
@@ -365,7 +378,8 @@ def test_upload_fills_empty_country_currency_and_seniority_but_keeps_chosen_ones
     saved = second.json()["preferences"]
     assert saved["country"] == "CA" and saved["currency"] == "USD"
     assert saved["seniority"] == ["mid"]
-    assert saved["address"] == "9 Queen Street, Toronto"
+    # The address always follows the latest resume.
+    assert saved["address"] == "1 King Street, London"
 
 
 def test_replacing_a_pdf_with_a_docx_removes_the_pdf_and_reads_the_word_text(
@@ -424,3 +438,72 @@ def test_upload_over_ten_megabytes_returns_413_and_keeps_the_old_resume(
 )
 def test_display_filename_keeps_only_a_clean_base_name(filename: str | None, expected: str) -> None:
     assert display_filename(filename, "pdf") == expected
+
+
+@pytest.mark.parametrize("llm_fails", [False, True])
+def test_upload_reads_city_state_and_zip_from_the_header_when_the_model_gives_no_address(
+    signed_in: TestClient,
+    db: FakeSession,
+    suggestions: list[ResumeSuggestions | Exception],
+    llm_fails: bool,
+) -> None:
+    db.add(Preferences(id=1, country="US"))
+    suggestions.append(LlmError("down") if llm_fails else ResumeSuggestions(address=None))
+
+    response = _upload(
+        signed_in, "cv.docx", _docx("Jane Doe\nSan Jose, California 95112 | jane@example.com")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["preferences"]["address"] == "San Jose, CA 95112"
+    assert response.json()["preferences"]["relocation_check"]["home"] == "San Jose, California"
+    assert db.rows[1].address == "San Jose, CA 95112"
+    # Saved by the upload itself: a reload shows it without clicking Save.
+    assert signed_in.get(PREFERENCES_URL).json()["address"] == "San Jose, CA 95112"
+
+
+def test_upload_replaces_a_saved_address_and_keeps_it_when_the_resume_has_none(
+    signed_in: TestClient,
+    db: FakeSession,
+    suggestions: list[ResumeSuggestions | Exception],
+) -> None:
+    db.add(Preferences(id=1, country="US", address="9 Old Rd, Dallas, TX 75201"))
+
+    def upload(text: str) -> str | None:
+        _upload(signed_in, "cv.docx", _docx(text))
+        return signed_in.get(PREFERENCES_URL).json()["address"]
+
+    # The model's address wins over the header's.
+    suggestions.append(ResumeSuggestions(address="12 Elm St, Austin, TX 78701"))
+    assert upload("Jane Doe\nSan Jose, CA 95112") == "12 Elm St, Austin, TX 78701"
+    # No model address: the header's replaces the saved one.
+    suggestions.append(ResumeSuggestions(address=None))
+    assert upload("Jane Doe\nSan Jose, CA 95112") == "San Jose, CA 95112"
+    # No address anywhere in the resume: the saved one is kept.
+    suggestions.append(LlmError("down"))
+    assert upload("Jane Doe\nBackend engineer") == "San Jose, CA 95112"
+
+
+@pytest.mark.parametrize(
+    ("header", "address"),
+    [
+        ("Jane Doe\nSan Jose, CA 95112", "San Jose, CA 95112"),
+        ("John Doe\nToronto, ON M5H 1A1, Canada", "Toronto, ON M5H 1A1"),
+    ],
+)
+def test_header_address_is_saved_with_no_country_or_relocation_answers(
+    signed_in: TestClient,
+    db: FakeSession,
+    suggestions: list[ResumeSuggestions | Exception],
+    header: str,
+    address: str,
+) -> None:
+    # A first upload: nothing saved yet, and the model is unavailable.
+    suggestions.append(LlmError("down"))
+
+    response = _upload(signed_in, "cv.docx", _docx(header))
+
+    assert response.status_code == 200
+    assert db.rows[1].address == address
+    assert db.rows[1].willing_to_relocate is None and db.rows[1].max_commute_miles is None
+    assert signed_in.get(PREFERENCES_URL).json()["address"] == address

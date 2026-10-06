@@ -14,6 +14,7 @@ from src.api.v1.schemas.preferences import (
     JobFetchingStatus,
     PreferencesRead,
     PreferencesUpdate,
+    RelocationCheck,
     ResumeInfo,
     ResumeUploadResponse,
 )
@@ -22,6 +23,9 @@ from src.db.session import get_db
 from src.models import Preferences
 from src.schedule import missing_for_fetching, next_scheduled_time
 from src.services import resume as resume_service
+from src.sources.locations import countries_in
+from src.sources.places import RESUME_HEADER_LINES, address_from_resume, home_place
+from src.sources.relocation import parse_excluded_places
 from src.tags import normalize_tags
 from src.vocabularies import COUNTRY_CURRENCIES, EEO_QUESTION_KEYS
 
@@ -31,6 +35,8 @@ router = APIRouter(prefix="/preferences", tags=["preferences"])
 
 PREFERENCES_ROW_ID = 1
 SUGGESTED_TAG_FIELDS = ("desired_titles", "hard_skills", "soft_skills")
+# Where the resume header's city is looked up when no country is saved or named.
+DEFAULT_ADDRESS_COUNTRY = "US"
 SUGGESTIONS_UNAVAILABLE_WARNING = (
     "Your resume was saved, but suggestions could not be generated right now. "
     "You can fill in your titles and skills by hand."
@@ -93,6 +99,9 @@ def _to_read(preferences: Preferences | None) -> PreferencesRead:
         seniority=preferences.seniority or [],
         address=preferences.address,
         gender=preferences.gender,
+        willing_to_relocate=preferences.willing_to_relocate,
+        excluded_relocation_places=preferences.excluded_relocation_places or [],
+        max_commute_miles=preferences.max_commute_miles,
         eeo_answers=EeoAnswers.model_validate(eeo_answers),
         additional_information=preferences.additional_information,
         auto_apply=bool(preferences.auto_apply),
@@ -100,6 +109,19 @@ def _to_read(preferences: Preferences | None) -> PreferencesRead:
         fetch_timezone=preferences.fetch_timezone,
         resume=_resume_info(preferences),
         job_fetching=_job_fetching(preferences),
+        relocation_check=_relocation_check(preferences),
+    )
+
+
+def _relocation_check(preferences: Preferences) -> RelocationCheck:
+    if not preferences.country:
+        return RelocationCheck()
+    home = home_place(preferences.address, preferences.country)
+    excluded = parse_excluded_places(
+        preferences.excluded_relocation_places or (), preferences.country
+    )
+    return RelocationCheck(
+        home=home.label if home else None, unrecognized_places=list(excluded.unrecognized)
     )
 
 
@@ -131,9 +153,11 @@ def upload_resume(
     """Store the resume, extract its text and save what it suggests.
 
     Suggested titles and skills are added after the saved ones (case-insensitive duplicates are
-    skipped). Seniority, country, currency and address are filled in only while they are empty,
-    so a choice the user made is never overwritten. The suggestions are returned so the client can
-    show which ones were added.
+    skipped). Seniority, country and currency are filled in only while they are empty, so a
+    choice the user made is never overwritten. The address is always replaced by the resume's:
+    the model's, or when it gives none (or fails) the city, state and ZIP code read from the
+    resume header without it; a resume with no address keeps the saved one. The suggestions are
+    returned so the client can show which ones were added.
     """
     try:
         content = resume_service.read_limited(file.file)
@@ -157,7 +181,9 @@ def upload_resume(
     suggestions, warning = _suggestions(session, resume_text)
     if suggestions is not None:
         _add_suggestions(preferences, suggestions)
-        session.commit()
+    if suggestions is None or not suggestions.address:
+        _fill_address_from_header(preferences, resume_text)
+    session.commit()
     return ResumeUploadResponse(
         resume=ResumeInfo(
             file_type=stored.file_type,
@@ -182,8 +208,29 @@ def _add_suggestions(preferences: Preferences, suggestions: ResumeSuggestions) -
         preferences.country = suggestions.country
     if not preferences.currency and preferences.country:
         preferences.currency = COUNTRY_CURRENCIES.get(preferences.country)
-    if not preferences.address and suggestions.address:
+    if suggestions.address:
         preferences.address = suggestions.address
+
+
+def _fill_address_from_header(preferences: Preferences, resume_text: str) -> None:
+    """Set the address to "City, ST 12345" from the resume header, without the model.
+
+    Replaces any saved address, independent of the relocation answers; kept when the header
+    names no city. Cities are looked up in the saved country, else in a country the header
+    names, else in the United States.
+    """
+    country = preferences.country or _header_country(resume_text) or DEFAULT_ADDRESS_COUNTRY
+    address = address_from_resume(resume_text, country)
+    if address:
+        preferences.address = address
+        logger.info("Address filled in from the resume header")
+
+
+def _header_country(resume_text: str) -> str | None:
+    """The one country the resume header names, if it names exactly one."""
+    header = "\n".join(resume_text.splitlines()[:RESUME_HEADER_LINES])
+    named = countries_in(header)
+    return next(iter(named)) if len(named) == 1 else None
 
 
 def _suggestions(session: Session, resume_text: str) -> tuple[ResumeSuggestions | None, str | None]:

@@ -99,10 +99,9 @@ export function OtherSection({
         >
           A longer version of your resume: projects, accomplishments and details
           that did not fit on your uploaded resume, plus anything else for
-          applications, such as your notice period or relocation plans. It is
+          applications, such as your notice period or earliest start date. It is
           used to fill in application forms and to write your tailored resume
-          and cover letter. Unlike the Personal & EEO answers, this is sent to
-          the AI model.
+          and cover letter.
         </p>
         <Textarea
           id="additional-information"

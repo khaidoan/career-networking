@@ -33,6 +33,7 @@ MAX_TAGS = 50
 MAX_TAG_LENGTH = 100
 MAX_ADDRESS_LENGTH = 1000
 MAX_ADDITIONAL_INFORMATION_LENGTH = 20_000
+MAX_COMMUTE_MILES = 1000
 # Salaries are stored in a 32-bit integer column.
 MAX_SALARY = 2_000_000_000
 
@@ -136,6 +137,9 @@ class PreferencesFields(BaseModel):
         Annotated[str, Field(max_length=MAX_ADDRESS_LENGTH)] | None, BeforeValidator(_blank_to_none)
     ] = None
     gender: Annotated[GenderSlug | None, BeforeValidator(_blank_to_none)] = None
+    willing_to_relocate: bool | None = None
+    excluded_relocation_places: TagList = []
+    max_commute_miles: Annotated[int, Field(ge=1, le=MAX_COMMUTE_MILES)] | None = None
     eeo_answers: EeoAnswers = EeoAnswers()
     additional_information: Annotated[
         Annotated[str, Field(max_length=MAX_ADDITIONAL_INFORMATION_LENGTH)] | None,
@@ -179,9 +183,19 @@ class JobFetchingStatus(BaseModel):
     next_run_at: datetime | None
 
 
+class RelocationCheck(BaseModel):
+    """How the fetcher reads the saved address and relocation places."""
+
+    # The home city found in the address ("Austin, Texas"); commute limits are measured from it.
+    home: str | None = None
+    # Places the user will not relocate to that name no known city or state.
+    unrecognized_places: list[str] = []
+
+
 class PreferencesRead(PreferencesFields):
     resume: ResumeInfo | None = None
     job_fetching: JobFetchingStatus
+    relocation_check: RelocationCheck = RelocationCheck()
 
 
 class ResumeUploadResponse(BaseModel):

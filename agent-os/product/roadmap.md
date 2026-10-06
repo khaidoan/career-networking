@@ -148,6 +148,8 @@ Help the user prepare tailored application materials and apply manually or semi-
 - Unknown question handling: email user + set inbox_type to `need_attention`
 
 **Data use (decided 2026-10-06)**
+- Any field on the Profile / Preferences page may be sent to the configured AI model. Users concerned about privacy check their model provider's data policy or run a local model.
+- `willing_to_relocate`, `excluded_relocation_places` and `max_commute_miles` answer relocation and commute questions on application forms (the fetcher already uses them to skip jobs).
 - `preferences.additional_information` is the user's long-form resume: extra projects, accomplishments and details beyond the uploaded resume, plus application facts such as notice period or relocation plans. It is given to the apply process (filling in application forms) and to the cover letter, cover letter reviewer, resume and resume reviewer agents, alongside the uploaded resume text. The tailored resume must still only state facts found in the uploaded resume or this field.
 
 ---
