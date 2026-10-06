@@ -16,6 +16,8 @@ dependencies = [
     "python-docx>=1.1",
     "python-multipart>=0.0.9",
     "sqlalchemy>=2.0",
+    # Full IANA time zone names (with legacy aliases) for the daily fetch time.
+    "tzdata>=2025.2",
     "uvicorn[standard]>=0.30",
 ]
 

@@ -147,6 +147,9 @@ Help the user prepare tailored application materials and apply manually or semi-
 - Use tailored PDFs from job folder
 - Unknown question handling: email user + set inbox_type to `need_attention`
 
+**Data use (decided 2026-10-06)**
+- `preferences.additional_information` is used only by the apply process (filling in application forms). It is never given to the cover letter, cover letter reviewer, resume or resume reviewer agents.
+
 ---
 
 ## Phase 6: Prompts Customization & Polish

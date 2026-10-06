@@ -1,4 +1,5 @@
-"""Fetcher run state: Google Jobs last-run time, sweep cursor and the directory cache folder.
+"""Fetcher run state: last run start, Google Jobs last-run time, sweep cursor and the directory
+cache folder.
 
 [UNCONFIRMED: D3] State lives in files under ``CAREER_NETWORKING_JOB_DATA/_fetcher/``. Every
 other module uses only the ``FetcherState`` interface returned by ``get_fetcher_state``, so the
@@ -24,6 +25,10 @@ DIRECTORY_CACHE_FOLDER_NAME = "directory_cache"
 
 
 class FetcherState(Protocol):
+    def get_last_run_started(self) -> datetime | None: ...
+
+    def set_last_run_started(self, when: datetime) -> None: ...
+
     def get_google_jobs_last_run(self) -> datetime | None: ...
 
     def set_google_jobs_last_run(self, when: datetime) -> None: ...
@@ -55,19 +60,28 @@ class FileFetcherState:
         self._folder = folder
         self._state_file = folder / STATE_FILE_NAME
 
+    def get_last_run_started(self) -> datetime | None:
+        return self._read_time("last_run_started", "last run start")
+
+    def set_last_run_started(self, when: datetime) -> None:
+        self._update(last_run_started=when.isoformat())
+
     def get_google_jobs_last_run(self) -> datetime | None:
-        value = self._read().get("google_jobs_last_run")
+        return self._read_time("google_jobs_last_run", "Google Jobs last-run time")
+
+    def set_google_jobs_last_run(self, when: datetime) -> None:
+        self._update(google_jobs_last_run=when.isoformat())
+
+    def _read_time(self, key: str, description: str) -> datetime | None:
+        value = self._read().get(key)
         if value is None:
             return None
         try:
             when = datetime.fromisoformat(value)
         except (TypeError, ValueError):
-            logger.warning("Fetcher state: invalid Google Jobs last-run time, resetting")
+            logger.warning("Fetcher state: invalid %s, resetting", description)
             return None
         return when if when.tzinfo else None
-
-    def set_google_jobs_last_run(self, when: datetime) -> None:
-        self._update(google_jobs_last_run=when.isoformat())
 
     def get_sweep_cursor(self) -> int:
         value = self._read().get("sweep_cursor", 0)

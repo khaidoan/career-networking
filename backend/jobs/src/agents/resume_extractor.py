@@ -1,4 +1,4 @@
-"""Resume extractor: suggests titles, skills, seniority and country from resume text."""
+"""Resume extractor: suggests titles, skills, seniority, country and address from resume text."""
 
 import re
 
@@ -11,6 +11,8 @@ from src.vocabularies import COUNTRIES, SENIORITY_LEVELS
 
 AGENT_NAME = "resume_extractor"
 MAX_RESUME_CHARS = 30_000
+# Same limit as the Profile page's Address field.
+MAX_ADDRESS_CHARS = 1000
 
 RESUME_EXTRACTOR_SYSTEM_PROMPT = """\
 You read a candidate's resume and suggest profile values for a job search.
@@ -26,13 +28,16 @@ Return:
 - country: the ISO 3166-1 alpha-2 code of the country the candidate lives in, from their address
   or, failing that, their most recent job location (for example "US", "GB"). Use null when the
   resume does not make it clear.
+- address: the candidate's postal address exactly as written in the resume (street, city,
+  region, postal code and country, as far as given), on one line. Use null when there is none.
 - hard_skills: concrete technical or domain skills, tools, languages and certifications named
   or clearly demonstrated in the resume.
 - soft_skills: interpersonal and working-style skills evidenced in the resume (for example
   "Stakeholder management", "Mentoring").
 
 Use short, conventional names (1 to 4 words each). Do not invent skills that the resume does not
-support. Do not include personal details such as names, contact details or addresses.
+support. Apart from address, do not include personal details such as names, email addresses or
+phone numbers.
 """
 
 # Level words removed from the start or end of suggested titles, in case the model adds them.
@@ -56,6 +61,7 @@ class ResumeSuggestions(BaseModel):
     soft_skills: list[str] = []
     seniority: list[str] = []
     country: str | None = None
+    address: str | None = None
 
     @field_validator("desired_titles", mode="before")
     @classmethod
@@ -79,6 +85,13 @@ class ResumeSuggestions(BaseModel):
         )
         return [level for level in SENIORITY_LEVELS if level in levels]
 
+    @field_validator("address", mode="before")
+    @classmethod
+    def _one_line_address(cls, value: object) -> str | None:
+        # Too long to be an address (the Profile field holds 1,000 characters): drop it.
+        address = " ".join(value.split()) if isinstance(value, str) else ""
+        return address if 0 < len(address) <= MAX_ADDRESS_CHARS else None
+
     @field_validator("country", mode="before")
     @classmethod
     def _known_country(cls, value: object) -> str | None:
@@ -87,7 +100,8 @@ class ResumeSuggestions(BaseModel):
 
 
 def extract_resume_suggestions(session: Session, resume_text: str) -> ResumeSuggestions:
-    """Suggested titles, skills, seniority and country; raises ``LlmError`` if the model fails."""
+    """Suggested titles, skills, seniority, country and address; raises ``LlmError`` if the model
+    fails."""
     system_prompt = resolve_system_prompt(session, AGENT_NAME, RESUME_EXTRACTOR_SYSTEM_PROMPT)
     return complete_structured(
         system_prompt,

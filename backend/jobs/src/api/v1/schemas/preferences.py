@@ -19,6 +19,7 @@ from pydantic import (
 )
 
 from src.agents.resume_extractor import ResumeSuggestions
+from src.schedule import FETCH_TIME_PATTERN, FetchingRequirement, is_valid_timezone
 from src.tags import normalize_tags
 from src.vocabularies import (
     COUNTRIES,
@@ -31,6 +32,7 @@ from src.vocabularies import (
 MAX_TAGS = 50
 MAX_TAG_LENGTH = 100
 MAX_ADDRESS_LENGTH = 1000
+MAX_ADDITIONAL_INFORMATION_LENGTH = 5000
 # Salaries are stored in a 32-bit integer column.
 MAX_SALARY = 2_000_000_000
 
@@ -90,6 +92,14 @@ def _answer(question: str) -> AfterValidator:
     return AfterValidator(_one_of(EEO_ANSWER_OPTIONS[question]))
 
 
+def _timezone(value: str) -> str:
+    if not is_valid_timezone(value):
+        raise ValueError("is not a known time zone")
+    return value
+
+
+FetchTime = Annotated[str, Field(pattern=FETCH_TIME_PATTERN.pattern)]
+TimeZoneName = Annotated[str, Field(max_length=64), AfterValidator(_timezone)]
 GenderSlug = Annotated[str, AfterValidator(_one_of(GENDER_OPTIONS))]
 RaceEthnicity = Annotated[str, _answer("race_ethnicity")]
 VeteranStatus = Annotated[str, _answer("veteran_status")]
@@ -126,11 +136,23 @@ class PreferencesFields(BaseModel):
     ] = None
     gender: Annotated[GenderSlug | None, BeforeValidator(_blank_to_none)] = None
     eeo_answers: EeoAnswers = EeoAnswers()
+    additional_information: Annotated[
+        Annotated[str, Field(max_length=MAX_ADDITIONAL_INFORMATION_LENGTH)] | None,
+        BeforeValidator(_blank_to_none),
+    ] = None
     auto_apply: bool = False
+    # Daily fetcher time as "HH:MM" in ``fetch_timezone``; ``None`` until saved, and job
+    # fetching stays disabled until both are set.
+    fetch_time: FetchTime | None = None
+    fetch_timezone: TimeZoneName | None = None
 
 
 class PreferencesUpdate(PreferencesFields):
     model_config = ConfigDict(extra="forbid")
+
+    # Required on every save, so a saved profile always has a fetch schedule.
+    fetch_time: FetchTime
+    fetch_timezone: TimeZoneName
 
     @field_validator("salary_max")
     @classmethod
@@ -147,8 +169,18 @@ class ResumeInfo(BaseModel):
     uploaded_at: datetime
 
 
+class JobFetchingStatus(BaseModel):
+    """Whether the fetcher will run, and if not, which saved values it still needs."""
+
+    enabled: bool
+    missing: list[FetchingRequirement]
+    # The next daily run, when enabled (a container restart also starts one).
+    next_run_at: datetime | None
+
+
 class PreferencesRead(PreferencesFields):
     resume: ResumeInfo | None = None
+    job_fetching: JobFetchingStatus
 
 
 class ResumeUploadResponse(BaseModel):

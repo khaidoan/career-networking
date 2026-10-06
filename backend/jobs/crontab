@@ -1,4 +1,5 @@
 # [UNCONFIRMED: D6] supercronic schedule for the `fetcher` compose service.
-# Once a day at 06:00 UTC. Runs in /app with the service's environment; a run that overlaps
-# another exits early.
-0 6 * * * python -m src.fetcher
+# Every 5 minutes, check whether the daily fetch time saved on the Profile page (default 06:00
+# UTC) has come; the check exits at once when it has not (see src/schedule.py). Runs in /app with
+# the service's environment; a run that overlaps another exits early.
+*/5 * * * * python -m src.fetcher --if-due

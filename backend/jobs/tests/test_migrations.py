@@ -30,6 +30,8 @@ EXPECTED_REVISION_ORDER = [
     "add_company_networking_linkedin_url_unique_index",
     "add_preferences_resume_filename",
     "add_preferences_auto_apply",
+    "add_preferences_fetch_time_and_fetch_timezone",
+    "add_preferences_additional_information",
 ]
 
 

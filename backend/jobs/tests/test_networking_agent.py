@@ -249,4 +249,7 @@ def test_no_linkedin_automation_dependency_and_contact_search_is_never_scheduled
         for line in (root / "crontab").read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    assert schedule and all(line.endswith("python -m src.fetcher") for line in schedule)
+    assert schedule and all(
+        line.endswith(("python -m src.fetcher", "python -m src.fetcher --if-due"))
+        for line in schedule
+    )

@@ -120,7 +120,7 @@ export function ResumeCard({ resume, onUploaded, onDeleted }: ResumeCardProps) {
       id="resume"
       title="Resume"
       icon={FileUser}
-      description="Upload a PDF or Word (.docx) file up to 10 MB. It is read to suggest job titles and skills, and to score new jobs."
+      description="Upload a PDF or Word (.docx) file up to 10 MB. The AI model reads it to suggest your job titles, skills, seniority, country and address, and to score new jobs."
     >
       <div className="flex flex-col gap-4" aria-busy={isBusy}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

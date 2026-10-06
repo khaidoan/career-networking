@@ -142,6 +142,7 @@ def test_resume_extractor_trims_and_deduplicates_suggestions(
                 "soft_skills": ["Mentoring", ""],
                 "seniority": ["staff_principal", "Senior", "senior", "guru"],
                 "country": " gb ",
+                "address": "  1 King Street,\n London  EC2V 8AU ",
             }
         )
     ]
@@ -152,6 +153,7 @@ def test_resume_extractor_trims_and_deduplicates_suggestions(
     assert suggestions.desired_titles == ["Backend Engineer", "Platform Engineer"]
     assert suggestions.seniority == ["senior", "staff_principal"]
     assert suggestions.country == "GB"
+    assert suggestions.address == "1 King Street, London EC2V 8AU"
     assert suggestions.hard_skills == ["Python", "SQL"]
     assert suggestions.soft_skills == ["Mentoring"]
 

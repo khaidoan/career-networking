@@ -128,9 +128,9 @@ Both stacks run `alembic upgrade head` when the jobs container starts, so the sc
 
 ### Job fetcher
 
-The `fetcher` service (in both compose files) is built from the `backend/jobs` image and uses the same `.env` and data/log volumes. It waits until the `jobs` service is healthy (so migrations have run), then runs `python -m src.fetcher` once a day at 06:00 UTC through [supercronic](https://github.com/aptible/supercronic); the schedule is in `backend/jobs/crontab`. A run takes roughly 30–90 minutes, almost all of it the ATS sweep's HTTP requests; it spends no LLM tokens until a posting has passed every filter below.
+The `fetcher` service (in both compose files) is built from the `backend/jobs` image and uses the same `.env` and data/log volumes. It waits until the `jobs` service is healthy (so migrations have run), then starts one run of `python -m src.fetcher` in the background every time the container starts (including restarts and `docker compose up` after a change), and runs it again once a day at the **Daily job fetch time** set on the Profile page, in the **Time zone** next to it. [supercronic](https://github.com/aptible/supercronic) calls `python -m src.fetcher --if-due` every 5 minutes (`backend/jobs/crontab`), which exits at once unless the time has come and no run has started since; a run that started in the hour before the time counts, so a restart shortly before it does not cause a second run. A changed time applies from the next check, with no restart needed. A run takes roughly 30–90 minutes, almost all of it the ATS sweep's HTTP requests; it spends no LLM tokens until a posting has passed every filter below.
 
-**Preconditions:** the fetcher does nothing until the Profile page has at least one desired job title and a country saved. Until then each run logs `Fetcher skipped: preferences incomplete …` and exits, and the Profile page shows that discovery is paused. If a run is still going when the next one starts, the new one logs `Fetcher skipped: another run is in progress` and exits (both exit with status 0).
+**Preconditions:** job fetching is disabled until the Profile page has at least one desired job title, a country, a daily fetch time and a time zone saved (the time and time zone are required whenever the page is saved; the page pre-fills 06:00 and the browser's time zone). The Profile page always says whether job fetching is enabled, with the next run time or what is still missing. While it is disabled, the scheduled check never starts a run, a run started by a container restart logs `Fetcher skipped: preferences incomplete …` and exits, and the Recommended page sends you to the Profile page to finish setting up. Browsers do not send a time zone in any HTTP header, so the server cannot detect it; the page fills it in from the browser instead. If a run is still going when the next one starts, the new one logs `Fetcher skipped: another run is in progress` and exits (both exit with status 0).
 
 **Each run, in order:**
 
@@ -153,7 +153,7 @@ The `fetcher` service (in both compose files) is built from the `backend/jobs` i
 
 #### Fetch now
 
-There is no button for this in the app. To run the fetcher immediately instead of waiting for tomorrow's run:
+There is no button for this in the app. Restarting the `fetcher` container starts a run in the background; to run one in the foreground and watch it instead:
 
 ```bash
 docker compose exec fetcher python -m src.fetcher

@@ -58,11 +58,41 @@ export type PreferencesUpdate = {
   address: string | null;
   gender: string | null;
   eeo_answers: EeoAnswers;
+  /**
+   * Free text from the "Other" section, used only when filling in application forms; never for
+   * writing the resume or cover letter.
+   */
+  additional_information: string | null;
   /** Whether jobs may be applied to automatically; off by default. */
   auto_apply: boolean;
+  /** Daily fetcher time as "HH:MM" in `fetch_timezone`; required on every save. */
+  fetch_time: string;
+  /** IANA time zone name; required on every save. */
+  fetch_timezone: string;
 };
 
-export type Preferences = PreferencesUpdate & { resume: ResumeInfo | null };
+/** A value job fetching needs before it is enabled. */
+export type FetchingRequirement =
+  "desired_titles" | "country" | "fetch_time" | "fetch_timezone";
+
+export type JobFetchingStatus = {
+  enabled: boolean;
+  /** Empty when enabled. */
+  missing: FetchingRequirement[];
+  /** ISO 8601 time of the next daily run; `null` while disabled. */
+  next_run_at: string | null;
+};
+
+export type Preferences = Omit<
+  PreferencesUpdate,
+  "fetch_time" | "fetch_timezone"
+> & {
+  /** `null` until saved; job fetching stays disabled until both are set. */
+  fetch_time: string | null;
+  fetch_timezone: string | null;
+  resume: ResumeInfo | null;
+  job_fetching: JobFetchingStatus;
+};
 
 export type ResumeSuggestions = {
   desired_titles: string[];
@@ -71,6 +101,8 @@ export type ResumeSuggestions = {
   seniority: string[];
   /** ISO 3166-1 alpha-2 code, or `null` when the resume does not make it clear. */
   country: string | null;
+  /** One line, or `null` when the resume has none. */
+  address: string | null;
 };
 
 export type ResumeUpload = {

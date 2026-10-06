@@ -26,6 +26,11 @@ export type TagField = (typeof TAG_FIELDS)[number];
 export const MAX_TAGS = 50;
 export const MAX_TAG_LENGTH = 100;
 export const MAX_ADDRESS_LENGTH = 1000;
+export const MAX_ADDITIONAL_INFORMATION_LENGTH = 5000;
+
+/** Server default and format (`src/schedule.py`): "HH:MM", 24-hour. */
+export const DEFAULT_FETCH_TIME = "06:00";
+const FETCH_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export type ProfileFormValues = Record<TagField, string[]> & {
   country: string;
@@ -36,7 +41,10 @@ export type ProfileFormValues = Record<TagField, string[]> & {
   address: string;
   gender: string;
   eeoAnswers: Record<EeoQuestionKey, string>;
+  additionalInformation: string;
   autoApply: boolean;
+  fetchTime: string;
+  fetchTimezone: string;
 };
 
 /** Lower-cased tags per field added from the latest resume upload, highlighted for review. */
@@ -101,18 +109,21 @@ export function applySuggestions(
 }
 
 /**
- * Take the seniority, country and currency the server filled in from a resume for the fields
- * still empty in the form. A country guessed from the browser (`guessedCountry`, not saved)
+ * Take the seniority, country, currency and address the server filled in from a resume for the
+ * fields still empty in the form. A country guessed from the browser (`guessedCountry`, not saved)
  * counts as empty, and so does the currency that guess filled in.
  */
 export function applyResumeDefaults(
   values: ProfileFormValues,
-  saved: Pick<Preferences, "seniority" | "country" | "currency">,
+  saved: Pick<Preferences, "seniority" | "country" | "currency" | "address">,
   guessedCountry?: string,
 ): ProfileFormValues {
   const next = { ...values };
   if (next.seniority.length === 0) {
     next.seniority = saved.seniority;
+  }
+  if (!next.address.trim() && saved.address) {
+    next.address = saved.address;
   }
   const countryIsGuess =
     !next.country || (!!guessedCountry && next.country === guessedCountry);
@@ -144,7 +155,10 @@ export function toFormValues(preferences: Preferences): ProfileFormValues {
     address: preferences.address ?? "",
     gender: preferences.gender ?? "",
     eeoAnswers,
+    additionalInformation: preferences.additional_information ?? "",
     autoApply: preferences.auto_apply ?? false,
+    fetchTime: preferences.fetch_time ?? DEFAULT_FETCH_TIME,
+    fetchTimezone: preferences.fetch_timezone ?? "",
   };
 }
 
@@ -175,6 +189,12 @@ export function validate(values: ProfileFormValues): FieldErrors {
   if (typeof min === "number" && typeof max === "number" && min > max) {
     errors.salary_max = "Must be greater than or equal to the minimum salary.";
   }
+  if (!FETCH_TIME_PATTERN.test(values.fetchTime)) {
+    errors.fetch_time = "Enter a time, for example 06:00.";
+  }
+  if (!values.fetchTimezone) {
+    errors.fetch_timezone = "Choose a time zone.";
+  }
   return errors;
 }
 
@@ -199,18 +219,25 @@ export function toUpdate(values: ProfileFormValues): PreferencesUpdate {
     address: values.address.trim() || null,
     gender: values.gender || null,
     eeo_answers: eeoAnswers,
+    additional_information: values.additionalInformation.trim() || null,
     auto_apply: values.autoApply,
+    fetch_time: values.fetchTime,
+    fetch_timezone: values.fetchTimezone,
   };
 }
 
-export type SetupItem = "resume" | "desired_titles" | "country";
+export type SetupItem =
+  "resume" | "desired_titles" | "country" | "fetch_schedule";
 
 /**
- * What the user still has to provide before the app is useful: a resume (to score jobs), plus at
- * least one desired job title and a country (the fetcher skips every run until both are saved).
+ * What the user still has to provide before the app is useful: a resume (to score jobs), plus
+ * the desired job titles, country and daily fetch time and time zone that job fetching needs.
  */
 export function missingSetup(
-  preferences: Pick<Preferences, "resume" | "desired_titles" | "country">,
+  preferences: Pick<
+    Preferences,
+    "resume" | "desired_titles" | "country" | "fetch_time" | "fetch_timezone"
+  >,
 ): SetupItem[] {
   const missing: SetupItem[] = [];
   if (!preferences.resume) {
@@ -221,6 +248,9 @@ export function missingSetup(
   }
   if (!preferences.country) {
     missing.push("country");
+  }
+  if (!preferences.fetch_time || !preferences.fetch_timezone) {
+    missing.push("fetch_schedule");
   }
   return missing;
 }

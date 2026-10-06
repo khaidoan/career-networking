@@ -21,7 +21,11 @@ const COMPLETE: Preferences = {
   address: null,
   gender: null,
   eeo_answers: {},
+  additional_information: null,
   auto_apply: false,
+  fetch_time: "06:00",
+  fetch_timezone: "UTC",
+  job_fetching: { enabled: true, missing: [], next_run_at: null },
   resume: {
     file_type: "pdf",
     file_name: "cv.pdf",
@@ -66,6 +70,7 @@ describe("RequireProfileSetup", () => {
     ["no resume", { resume: null }],
     ["no desired titles", { desired_titles: [] }],
     ["no country", { country: null }],
+    ["no fetch time", { fetch_time: null }],
   ])("sends the user to the Profile page with %s", async (_, patch) => {
     respondWith(json({ ...COMPLETE, ...patch }));
 

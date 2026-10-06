@@ -15,6 +15,7 @@ const SETUP_ITEM_LABELS: Record<SetupItem, string> = {
   resume: "Upload your resume (PDF or Word).",
   desired_titles: "Add at least one desired job title.",
   country: "Choose the country you want to work in.",
+  fetch_schedule: "Choose the daily time (and time zone) to fetch new jobs.",
 };
 
 type SetupDialogProps = {

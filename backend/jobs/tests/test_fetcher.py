@@ -25,6 +25,7 @@ from src.sources.ats_sweep import SweepResult
 from src.sources.boards import BoardScan
 from src.sources.google_jobs import SERPAPI_SEARCH_URL, GoogleJobsResult
 from src.sources.providers.base import BoardRef, Posting
+from src.sources.state import get_fetcher_state
 from src.sources.urls import normalize_url
 from tests.conftest import FakeHttp, fixture_json
 
@@ -129,6 +130,9 @@ def sources(monkeypatch: pytest.MonkeyPatch) -> FakeSources:
 
 
 def _save_preferences(sessions: sessionmaker[Session], **values: Any) -> None:
+    # Fetching also needs a daily schedule; tests that are not about it get one by default.
+    values.setdefault("fetch_time", "06:00")
+    values.setdefault("fetch_timezone", "UTC")
     with sessions() as session, session.begin():
         session.add(Preferences(id=1, **values))
 
@@ -415,6 +419,54 @@ def test_a_run_exits_cleanly_while_another_run_holds_the_advisory_lock(
     sources.google = None
     sources.sweep = SweepResult(skipped=True)
     assert _run(test_settings, sessions, fake_http).status == fetcher.STATUS_COMPLETED
+
+
+def test_if_due_runs_only_at_the_saved_daily_time_and_every_run_records_its_start(
+    test_settings: Settings,
+    sessions: sessionmaker[Session],
+    sources: FakeSources,
+    fake_http: FakeHttp,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _save_preferences(
+        sessions,
+        desired_titles=["Backend Engineer"],
+        country="US",
+        fetch_time="07:00",
+        fetch_timezone="America/Los_Angeles",
+    )
+    state = get_fetcher_state(test_settings)
+    runs: list[datetime] = []
+    monkeypatch.setattr(fetcher, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(fetcher, "configure_logging", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(fetcher, "get_engine", lambda: sessions.kw["bind"])
+    monkeypatch.setattr(fetcher, "get_sessionmaker", lambda: sessions)
+    real_run_fetch = fetcher.run_fetch
+    monkeypatch.setattr(fetcher, "run_fetch", lambda *_args, **_kwargs: runs.append(NOW))
+
+    # No run recorded yet: due straight away.
+    assert fetcher.main(["--if-due"]) == 0
+    assert len(runs) == 1
+
+    # NOW is 05:00 in Los Angeles; a run started after yesterday's 07:00 is not due again.
+    state.set_last_run_started(NOW - timedelta(hours=10))
+    monkeypatch.setattr(fetcher, "datetime", _FrozenDatetime)
+    assert fetcher.main(["--if-due"]) == 0
+    assert len(runs) == 1
+    # Without --if-due ("Fetch now") it always runs.
+    assert fetcher.main([]) == 0
+    assert len(runs) == 2
+
+    # A real run records when it started.
+    monkeypatch.setattr(fetcher, "run_fetch", real_run_fetch)
+    _run(test_settings, sessions, fake_http)
+    assert state.get_last_run_started() == NOW
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+        return NOW if tz is None else NOW.astimezone(tz)
 
 
 def _serpapi_result(title: str, company: str, via: str, apply_link: str) -> dict[str, Any]:

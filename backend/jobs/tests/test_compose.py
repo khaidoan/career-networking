@@ -10,6 +10,13 @@ import yaml
 _PARENTS = Path(__file__).resolve().parents
 REPO_ROOT = _PARENTS[3] if len(_PARENTS) > 3 else None
 COMPOSE_FILES = ("docker-compose.yml", "dev-docker-compose.yml")
+# One run in the background at container start, then supercronic (quiet, since it checks
+# whether a run is due every few minutes) as the main process.
+FETCHER_COMMAND = [
+    "sh",
+    "-c",
+    "python -m src.fetcher & exec supercronic -quiet -passthrough-logs /app/crontab",
+]
 
 
 def _services(file_name: str) -> dict[str, Any]:
@@ -30,6 +37,5 @@ def test_fetcher_service_runs_the_jobs_image_on_a_schedule_after_jobs_is_healthy
     assert fetcher["env_file"] == jobs["env_file"] == ".env"
     assert fetcher["volumes"] == jobs["volumes"]
     assert fetcher["depends_on"] == {"jobs": {"condition": "service_healthy"}}
-    assert fetcher["command"][0] == "supercronic"
-    assert fetcher["command"][-1] == "/app/crontab"
+    assert fetcher["command"] == FETCHER_COMMAND
     assert "ports" not in fetcher

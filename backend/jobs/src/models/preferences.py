@@ -33,3 +33,9 @@ class Preferences(TimestampMixin, Base):
     auto_apply: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    # Daily fetcher time as "HH:MM" in fetch_timezone (an IANA name); fetching needs both.
+    fetch_time: Mapped[str | None] = mapped_column(Text)
+    fetch_timezone: Mapped[str | None] = mapped_column(Text)
+    # Used only by the apply process to fill in application forms; never passed to the resume or
+    # cover letter writers.
+    additional_information: Mapped[str | None] = mapped_column(Text)

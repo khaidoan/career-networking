@@ -46,15 +46,18 @@ services:
       <<: *healthcheck-timing
       start_period: 30s
 
-  # Job fetcher: the jobs image running `python -m src.fetcher` once a day
-  # (backend/jobs/crontab). Waits for a healthy jobs service, which has applied the migrations.
+  # Job fetcher: the jobs image running `python -m src.fetcher` in the background each time the
+  # container starts, then once a day (backend/jobs/crontab). Waits for a healthy jobs service,
+  # which has applied the migrations.
   # Fetch now, by hand: docker compose exec fetcher python -m src.fetcher
   fetcher:
     build: ./backend/jobs
     restart: unless-stopped
     env_file: .env
     # [UNCONFIRMED: D6] supercronic is the scheduler.
-    command: ["supercronic", "-passthrough-logs", "/app/crontab"]
+    # The start-up run is a child of supercronic once `exec` replaces the shell, so it is reaped;
+    # the fetcher's advisory lock makes an overlapping scheduled run exit early.
+    command: ["sh", "-c", "python -m src.fetcher & exec supercronic -quiet -passthrough-logs /app/crontab"]
     volumes:
       - ./backend/data/resume:/opt/career_networking/resume
       - ./backend/data/jobs:/opt/career_networking/jobs

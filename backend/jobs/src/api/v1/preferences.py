@@ -1,6 +1,7 @@
 """The single user's preferences and resume (``/api/v1/preferences``)."""
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
@@ -10,6 +11,7 @@ from src.agents.resume_extractor import ResumeSuggestions, extract_resume_sugges
 from src.api.v1.schemas.preferences import (
     MAX_TAGS,
     EeoAnswers,
+    JobFetchingStatus,
     PreferencesRead,
     PreferencesUpdate,
     ResumeInfo,
@@ -18,6 +20,7 @@ from src.api.v1.schemas.preferences import (
 from src.config import Settings, get_settings
 from src.db.session import get_db
 from src.models import Preferences
+from src.schedule import missing_for_fetching, next_scheduled_time
 from src.services import resume as resume_service
 from src.tags import normalize_tags
 from src.vocabularies import COUNTRY_CURRENCIES, EEO_QUESTION_KEYS
@@ -60,9 +63,19 @@ def _resume_info(preferences: Preferences | None) -> ResumeInfo | None:
     )
 
 
+def _job_fetching(preferences: Preferences | None) -> JobFetchingStatus:
+    missing = missing_for_fetching(preferences)
+    next_run_at = None
+    if not missing and preferences and preferences.fetch_time and preferences.fetch_timezone:
+        next_run_at = next_scheduled_time(
+            datetime.now(UTC), preferences.fetch_time, preferences.fetch_timezone
+        )
+    return JobFetchingStatus(enabled=not missing, missing=missing, next_run_at=next_run_at)
+
+
 def _to_read(preferences: Preferences | None) -> PreferencesRead:
     if preferences is None:
-        return PreferencesRead()
+        return PreferencesRead(job_fetching=_job_fetching(None))
     eeo_answers = {
         key: value
         for key, value in (preferences.eeo_answers or {}).items()
@@ -80,8 +93,12 @@ def _to_read(preferences: Preferences | None) -> PreferencesRead:
         address=preferences.address,
         gender=preferences.gender,
         eeo_answers=EeoAnswers.model_validate(eeo_answers),
+        additional_information=preferences.additional_information,
         auto_apply=bool(preferences.auto_apply),
+        fetch_time=preferences.fetch_time,
+        fetch_timezone=preferences.fetch_timezone,
         resume=_resume_info(preferences),
+        job_fetching=_job_fetching(preferences),
     )
 
 
@@ -113,8 +130,8 @@ def upload_resume(
     """Store the resume, extract its text and save what it suggests.
 
     Suggested titles and skills are added after the saved ones (case-insensitive duplicates are
-    skipped). Seniority, country and currency are filled in only while they are empty, so a
-    choice the user made is never overwritten. The suggestions are returned so the client can
+    skipped). Seniority, country, currency and address are filled in only while they are empty,
+    so a choice the user made is never overwritten. The suggestions are returned so the client can
     show which ones were added.
     """
     try:
@@ -164,6 +181,8 @@ def _add_suggestions(preferences: Preferences, suggestions: ResumeSuggestions) -
         preferences.country = suggestions.country
     if not preferences.currency and preferences.country:
         preferences.currency = COUNTRY_CURRENCIES.get(preferences.country)
+    if not preferences.address and suggestions.address:
+        preferences.address = suggestions.address
 
 
 def _suggestions(session: Session, resume_text: str) -> tuple[ResumeSuggestions | None, str | None]:

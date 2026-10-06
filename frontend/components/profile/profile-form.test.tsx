@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +14,10 @@ const detected = vi.hoisted(() => ({
 vi.mock("@/lib/profile/detect-country", () => ({
   detectCountry: () => detected.country,
 }));
+vi.mock("@/lib/profile/timezones", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/profile/timezones")>()),
+  browserTimeZone: () => "America/Chicago",
+}));
 
 const EMPTY_PREFERENCES: Preferences = {
   desired_titles: [],
@@ -27,8 +31,16 @@ const EMPTY_PREFERENCES: Preferences = {
   address: null,
   gender: null,
   eeo_answers: {},
+  additional_information: null,
   auto_apply: false,
+  fetch_time: null,
+  fetch_timezone: null,
   resume: null,
+  job_fetching: {
+    enabled: false,
+    missing: ["desired_titles", "country", "fetch_time", "fetch_timezone"],
+    next_run_at: null,
+  },
 };
 
 function json(body: unknown, status = 200) {
@@ -95,11 +107,27 @@ describe("ProfileForm", () => {
     const user = userEvent.setup();
 
     render(<ProfileForm />);
-    await user.type(
-      await screen.findByLabelText("Hard skills"),
-      "Python{Enter}",
-    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Choose the daily time (and time zone) to fetch new jobs."]);
+    await dismissSetup(user);
+    await user.type(screen.getByLabelText("Hard skills"), "Python{Enter}");
     await user.type(screen.getByLabelText("Minimum yearly salary"), "120000");
+    expect(
+      screen.getByRole("combobox", { name: "Time zone" }),
+    ).toHaveAccessibleDescription(
+      "Detected from your browser. Check it, then click Save.",
+    );
+    fireEvent.change(screen.getByLabelText("Daily job fetch time"), {
+      target: { value: "07:30" },
+    });
+    await user.type(
+      screen.getByLabelText("Additional Information"),
+      "Notice period: 4 weeks.",
+    );
     const autoApply = screen.getByRole("checkbox", { name: "Auto apply" });
     expect(autoApply).not.toBeChecked();
     await user.click(autoApply);
@@ -118,6 +146,9 @@ describe("ProfileForm", () => {
       salary_min: 120000,
       salary_max: null,
       auto_apply: true,
+      fetch_time: "07:30",
+      fetch_timezone: "America/Chicago",
+      additional_information: "Notice period: 4 weeks.",
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByText("Jane Doe CV.pdf")).toBeInTheDocument();
@@ -158,6 +189,7 @@ describe("ProfileForm", () => {
       "Upload your resume (PDF or Word).",
       "Add at least one desired job title.",
       "Choose the country you want to work in.",
+      "Choose the daily time (and time zone) to fetch new jobs.",
     ]);
     await dismissSetup(user);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -249,6 +281,8 @@ describe("ProfileForm", () => {
           ...EMPTY_PREFERENCES,
           desired_titles: ["Backend Engineer"],
           country: "US",
+          fetch_time: "06:00",
+          fetch_timezone: "UTC",
           resume: { ...RESUME, file_type: "docx", file_name: "CV final.docx" },
         }),
       "DELETE /api/v1/preferences/resume": () =>
@@ -369,7 +403,7 @@ describe("ProfileForm", () => {
     expect(country).not.toHaveAccessibleDescription();
   });
 
-  it("shows the seniority and country the server took from the resume", async () => {
+  it("shows the seniority, country and address the server took from the resume", async () => {
     detected.country = "CA";
     mockApi({
       "GET /api/v1/preferences": () => json(EMPTY_PREFERENCES),
@@ -382,6 +416,7 @@ describe("ProfileForm", () => {
             soft_skills: [],
             seniority: ["senior"],
             country: "GB",
+            address: "1 King Street, London",
           },
           warning: null,
           preferences: {
@@ -390,6 +425,7 @@ describe("ProfileForm", () => {
             seniority: ["senior"],
             country: "GB",
             currency: "GBP",
+            address: "1 King Street, London",
             resume: RESUME,
           },
         }),
@@ -413,5 +449,87 @@ describe("ProfileForm", () => {
     expect(country).not.toHaveAccessibleDescription();
     expect(screen.getByLabelText("Currency")).toHaveTextContent("GBP");
     expect(screen.getByRole("checkbox", { name: "Senior" })).toBeChecked();
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "1 King Street, London",
+    );
+  });
+
+  it("shows the saved fetch time and time zone and requires a time", async () => {
+    const fetchMock = mockApi({
+      "GET /api/v1/preferences": () =>
+        json({
+          ...EMPTY_PREFERENCES,
+          desired_titles: ["Backend Engineer"],
+          country: "US",
+          resume: RESUME,
+          fetch_time: "21:15",
+          fetch_timezone: "Asia/Calcutta",
+        }),
+    });
+    const user = userEvent.setup();
+
+    render(<ProfileForm />);
+    const time = await screen.findByLabelText("Daily job fetch time");
+    expect(time).toHaveValue("21:15");
+    // A legacy name the browser's list may lack is still shown, not detected.
+    const zone = screen.getByRole("combobox", { name: "Time zone" });
+    expect(zone).toHaveValue("Asia/Calcutta");
+    expect(zone).toHaveAccessibleDescription(
+      "The fetch time is in this time zone.",
+    );
+
+    fireEvent.change(time, { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Enter a time, for example 06:00."),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("says whether job fetching is enabled, from the saved profile", async () => {
+    const saved: Preferences = {
+      ...EMPTY_PREFERENCES,
+      desired_titles: ["Backend Engineer"],
+      country: "US",
+      resume: RESUME,
+      job_fetching: {
+        enabled: false,
+        missing: ["fetch_time", "fetch_timezone"],
+        next_run_at: null,
+      },
+    };
+    mockApi({
+      "GET /api/v1/preferences": () => json(saved),
+      "PUT /api/v1/preferences": (init) =>
+        json({
+          ...saved,
+          ...JSON.parse(String(init.body)),
+          job_fetching: {
+            enabled: true,
+            missing: [],
+            next_run_at: "2026-10-07T13:00:00Z",
+          },
+        }),
+    });
+    const user = userEvent.setup();
+
+    render(<ProfileForm />);
+    await dismissSetup(user);
+
+    expect(screen.getByText("Job fetching is disabled")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "To turn it on, fill in and save: Daily job fetch time, Time zone.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Job fetching is enabled"),
+    ).toBeInTheDocument();
+    // 13:00 UTC is 08:00 in Chicago (CDT); shown in the saved time zone.
+    expect(screen.getByText(/^Next run: .*8:00/)).toBeInTheDocument();
   });
 });

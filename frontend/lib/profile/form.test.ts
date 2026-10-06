@@ -15,14 +15,23 @@ const EMPTY: Preferences = {
   address: null,
   gender: null,
   eeo_answers: {},
+  additional_information: null,
   auto_apply: false,
+  fetch_time: null,
+  fetch_timezone: null,
   resume: null,
+  job_fetching: {
+    enabled: false,
+    missing: ["desired_titles", "country", "fetch_time", "fetch_timezone"],
+    next_run_at: null,
+  },
 };
 
 const FROM_RESUME = {
   seniority: ["senior"],
   country: "GB",
   currency: "GBP",
+  address: "1 King Street, London",
 };
 
 describe("applyResumeDefaults", () => {
@@ -32,6 +41,7 @@ describe("applyResumeDefaults", () => {
       seniority: ["senior"],
       country: "GB",
       currency: "GBP",
+      address: "1 King Street, London",
     });
 
     const guessed = { ...empty, country: "CA", currency: "CAD" };
@@ -47,11 +57,13 @@ describe("applyResumeDefaults", () => {
       seniority: ["mid"],
       country: "CA",
       currency: "USD",
+      address: "9 Queen Street, Toronto",
     };
     expect(applyResumeDefaults(chosen, FROM_RESUME)).toMatchObject({
       seniority: ["mid"],
       country: "CA",
       currency: "USD",
+      address: "9 Queen Street, Toronto",
     });
     // A currency picked by hand survives replacing the guessed country.
     expect(

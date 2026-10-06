@@ -10,8 +10,10 @@ run continues. A Postgres advisory lock keeps two runs from overlapping.
 LLM tokens are spent only on postings that pass the free filters (title, seniority, country,
 7-day recency) and both duplicate checks; the company lookup runs only for recommended jobs.
 
-The ``fetcher`` compose service runs this once a day. An on-demand
-"Fetch now" is the same command run by hand; there is no API endpoint or UI button:
+The ``fetcher`` compose service runs this once when the container starts, and its scheduler
+calls ``python -m src.fetcher --if-due`` every few minutes, which runs only at the daily time
+saved on the Profile page (see ``src.schedule``). An on-demand "Fetch now" is the plain command
+run by hand; there is no API endpoint or UI button:
 
     docker compose exec fetcher python -m src.fetcher
 """
@@ -44,6 +46,7 @@ from src.models import (
     Job,
     Preferences,
 )
+from src.schedule import is_due, missing_for_fetching
 from src.services.evaluation import (
     INBOX_IGNORED,
     INBOX_RECOMMENDED,
@@ -209,6 +212,12 @@ def run_fetch(
             summary.status = STATUS_LOCKED
             return summary
 
+        # Recorded before anything else so the schedule counts this run, even a skipped one.
+        try:
+            get_fetcher_state(settings).set_last_run_started(now)
+        except OSError:
+            logger.exception("Could not record the run start; continuing")
+
         # Housekeeping runs even when discovery is paused below.
         try:
             summary.ignored_jobs_deleted = delete_expired_ignored_jobs(session_factory, now)
@@ -216,11 +225,13 @@ def run_fetch(
             logger.exception("Could not delete expired ignored jobs; continuing")
 
         preferences = load_preferences(session_factory)
+        missing = missing_for_fetching(preferences)
         criteria = SearchCriteria.from_preferences(preferences)
-        if criteria is None:
+        if missing or criteria is None:
             logger.info(
-                "Fetcher skipped: preferences incomplete (set desired titles and country "
-                "on the Profile page)"
+                "Fetcher skipped: preferences incomplete, job fetching is disabled "
+                "(missing: %s; save them on the Profile page)",
+                ", ".join(missing),
             )
             summary.status = STATUS_PREFERENCES_INCOMPLETE
             return summary
@@ -659,8 +670,22 @@ def _constraint_name(error: IntegrityError) -> str | None:
     return getattr(diag, "constraint_name", None)
 
 
-def main() -> int:
-    """``python -m src.fetcher``: exit 0 for completed and skipped runs, 1 if the run crashed."""
+def is_run_due(settings: Settings, session_factory: sessionmaker[Session], now: datetime) -> bool:
+    """Whether the daily time saved on the Profile page has come since the last run started
+    (never while the time or time zone is unset: fetching is disabled)."""
+    preferences = load_preferences(session_factory)
+    return is_due(
+        now,
+        preferences.fetch_time if preferences else None,
+        preferences.fetch_timezone if preferences else None,
+        get_fetcher_state(settings).get_last_run_started(),
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m src.fetcher [--if-due]``: exit 0 for completed, skipped and not-due runs, 1 if
+    the run crashed. ``--if-due`` (the scheduler's mode) runs only at the saved daily time."""
+    args = sys.argv[1:] if argv is None else argv
     try:
         settings = get_settings()
     except SettingsError as error:
@@ -668,7 +693,11 @@ def main() -> int:
         return 1
     configure_logging(settings.log_folder, file_name=FETCHER_LOG_FILE_NAME)
     try:
-        run_fetch(settings, engine=get_engine(), session_factory=get_sessionmaker())
+        session_factory = get_sessionmaker()
+        # Checked every few minutes, so "not due" is not logged.
+        if "--if-due" in args and not is_run_due(settings, session_factory, datetime.now(UTC)):
+            return 0
+        run_fetch(settings, engine=get_engine(), session_factory=session_factory)
     except Exception:
         logger.exception("Fetcher run failed")
         return 1

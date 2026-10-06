@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { CompensationSection } from "@/components/profile/compensation-section";
+import { JobFetchingStatus } from "@/components/profile/job-fetching-status";
 import { JobPreferencesSection } from "@/components/profile/job-preferences-section";
 import { OtherSection } from "@/components/profile/other-section";
 import { PersonalEeoSection } from "@/components/profile/personal-eeo-section";
@@ -25,6 +26,7 @@ import {
   type ResumeUpload,
 } from "@/lib/api/preferences";
 import { detectCountry } from "@/lib/profile/detect-country";
+import { browserTimeZone } from "@/lib/profile/timezones";
 import {
   applyResumeDefaults,
   applySuggestions,
@@ -51,12 +53,18 @@ type SaveStatus =
 const FORM_TO_API_FIELD: Record<string, string> = {
   salaryMin: "salary_min",
   salaryMax: "salary_max",
+  fetchTime: "fetch_time",
+  fetchTimezone: "fetch_timezone",
+  additionalInformation: "additional_information",
 };
 
 const CLIENT_INVALID_MESSAGE =
   "Some fields need your attention. Check the messages above.";
 
-/** Form values for `preferences`, with the browser's country filled in when none is saved. */
+/**
+ * Form values for `preferences`, with the browser's country and time zone filled in when none
+ * is saved.
+ */
 function initialValues(preferences: Preferences) {
   const values = toFormValues(preferences);
   const detectedCountry = values.country ? undefined : detectCountry();
@@ -64,7 +72,11 @@ function initialValues(preferences: Preferences) {
     values.country = detectedCountry;
     values.currency ||= COUNTRY_CURRENCY[detectedCountry] ?? "";
   }
-  return { values, detectedCountry };
+  const detectedTimeZone = values.fetchTimezone ? undefined : browserTimeZone();
+  if (detectedTimeZone) {
+    values.fetchTimezone = detectedTimeZone;
+  }
+  return { values, detectedCountry, detectedTimeZone };
 }
 
 /** The Profile page: loads the saved preferences, edits them in sections and saves with PUT. */
@@ -81,6 +93,7 @@ export function ProfileForm() {
   const [setupOpen, setSetupOpen] = useState(false);
   // Pre-filled when no country is saved; cleared by the first successful save.
   const [detectedCountry, setDetectedCountry] = useState<string>();
+  const [detectedTimeZone, setDetectedTimeZone] = useState<string>();
 
   // Bumped by "Try again" to re-run the load effect.
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -95,6 +108,7 @@ export function ProfileForm() {
         }
         const initial = initialValues(result.preferences);
         setDetectedCountry(initial.detectedCountry);
+        setDetectedTimeZone(initial.detectedTimeZone);
         setSaved(result.preferences);
         setValues(initial.values);
         setSetupOpen(missingSetup(result.preferences).length > 0);
@@ -211,6 +225,11 @@ export function ProfileForm() {
 
   return (
     <div className="flex flex-col gap-6">
+      <JobFetchingStatus
+        status={saved.job_fetching}
+        timeZone={saved.fetch_timezone}
+      />
+
       <SetupDialog
         open={setupOpen}
         onClose={() => setSetupOpen(false)}
@@ -256,7 +275,12 @@ export function ProfileForm() {
           detectedCountry={saved.country ? undefined : detectedCountry}
         />
         <PersonalEeoSection values={values} errors={errors} onChange={update} />
-        <OtherSection values={values} errors={errors} onChange={update} />
+        <OtherSection
+          values={values}
+          errors={errors}
+          onChange={update}
+          detectedTimeZone={saved.fetch_timezone ? undefined : detectedTimeZone}
+        />
 
         <div className="flex flex-col items-center gap-3">
           <Button type="submit" disabled={saving} aria-busy={saving}>

@@ -130,6 +130,12 @@ def test_get_requires_a_session_and_returns_empty_defaults_before_the_first_save
     assert body["country"] is None and body["resume"] is None
     assert body["eeo_answers"]["work_authorization"] is None
     assert body["auto_apply"] is False
+    assert body["fetch_time"] is None and body["fetch_timezone"] is None
+    assert body["job_fetching"] == {
+        "enabled": False,
+        "missing": ["desired_titles", "country", "fetch_time", "fetch_timezone"],
+        "next_run_at": None,
+    }
 
 
 def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: FakeSession) -> None:
@@ -144,6 +150,9 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
         "gender": "decline_to_answer",
         "eeo_answers": {"work_authorization": "authorized", "veteran_status": "decline_to_answer"},
         "auto_apply": True,
+        "fetch_time": "07:30",
+        "fetch_timezone": "America/Los_Angeles",
+        "additional_information": "  Notice period: 4 weeks.\nOpen to relocation.  ",
     }
 
     response = signed_in.put(PREFERENCES_URL, json=payload)
@@ -156,6 +165,11 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
     saved = db.rows[1]
     assert saved.salary_max == 150000
     assert saved.auto_apply is True and body["auto_apply"] is True
+    assert saved.fetch_time == "07:30" and saved.fetch_timezone == "America/Los_Angeles"
+    assert body["additional_information"] == "Notice period: 4 weeks.\nOpen to relocation."
+    assert body["job_fetching"]["enabled"] is True and body["job_fetching"]["missing"] == []
+    # 07:30 in Los Angeles is 14:30 or 15:30 UTC, depending on daylight saving.
+    assert body["job_fetching"]["next_run_at"][11:16] in ("14:30", "15:30")
     assert saved.eeo_answers == {
         "veteran_status": "decline_to_answer",
         "work_authorization": "authorized",
@@ -166,7 +180,15 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
 def test_put_rejects_invalid_values_with_field_level_detail(signed_in: TestClient) -> None:
     response = signed_in.put(
         PREFERENCES_URL,
-        json={"salary_min": 200000, "salary_max": 100000, "country": "XX", "seniority": ["guru"]},
+        json={
+            "additional_information": "x" * 5001,
+            "salary_min": 200000,
+            "salary_max": 100000,
+            "country": "XX",
+            "seniority": ["guru"],
+            "fetch_time": "7:30pm",
+            "fetch_timezone": "America",
+        },
     )
 
     assert response.status_code == 422
@@ -174,6 +196,16 @@ def test_put_rejects_invalid_values_with_field_level_detail(signed_in: TestClien
     assert ("salary_max",) in fields
     assert ("country",) in fields
     assert ("seniority", 0) in fields
+    assert ("fetch_time",) in fields and ("fetch_timezone",) in fields
+    assert ("additional_information",) in fields
+
+
+def test_put_requires_the_fetch_time_and_time_zone(signed_in: TestClient) -> None:
+    response = signed_in.put(PREFERENCES_URL, json={"desired_titles": ["Backend Engineer"]})
+
+    assert response.status_code == 422
+    fields = {tuple(error["loc"][1:]) for error in response.json()["detail"]}
+    assert fields == {("fetch_time",), ("fetch_timezone",)}
 
 
 @pytest.mark.parametrize("llm_fails", [False, True])
@@ -310,7 +342,9 @@ def test_upload_fills_empty_country_currency_and_seniority_but_keeps_chosen_ones
     db: FakeSession,
     suggestions: list[ResumeSuggestions | Exception],
 ) -> None:
-    resume = ResumeSuggestions(seniority=["senior", "staff_principal"], country="GB")
+    resume = ResumeSuggestions(
+        seniority=["senior", "staff_principal"], country="GB", address="1 King Street, London"
+    )
     suggestions.extend([resume, resume])
 
     first = _upload(signed_in, "cv.pdf", _pdf("Jane Doe, London"))
@@ -319,13 +353,16 @@ def test_upload_fills_empty_country_currency_and_seniority_but_keeps_chosen_ones
     saved = first.json()["preferences"]
     assert saved["country"] == "GB" and saved["currency"] == "GBP"
     assert saved["seniority"] == ["senior", "staff_principal"]
+    assert saved["address"] == "1 King Street, London"
 
     db.rows[1].country, db.rows[1].currency, db.rows[1].seniority = "CA", "USD", ["mid"]
+    db.rows[1].address = "9 Queen Street, Toronto"
     second = _upload(signed_in, "cv.pdf", _pdf("Jane Doe, London"))
 
     saved = second.json()["preferences"]
     assert saved["country"] == "CA" and saved["currency"] == "USD"
     assert saved["seniority"] == ["mid"]
+    assert saved["address"] == "9 Queen Street, Toronto"
 
 
 def test_replacing_a_pdf_with_a_docx_removes_the_pdf_and_reads_the_word_text(
