@@ -7,7 +7,7 @@ import pytest
 
 from src.agents.company_lookup import lookup_company
 from src.agents.evaluator import JobForEvaluation, evaluate_job
-from src.agents.resume_extractor import extract_resume_suggestions
+from src.agents.resume_extractor import extract_resume_suggestions, strip_seniority
 from src.models import Company, Preferences
 from tests.conftest import FakeLlm
 
@@ -133,15 +133,40 @@ def test_resume_extractor_trims_and_deduplicates_suggestions(
     fake_llm.replies = [
         json.dumps(
             {
-                "desired_titles": [" Backend Engineer ", "backend engineer", "Staff Engineer"],
+                "desired_titles": [
+                    " Backend Engineer ",
+                    "Senior backend engineer",
+                    "Platform Engineer II",
+                ],
                 "hard_skills": ["Python", "PYTHON", "  SQL"],
                 "soft_skills": ["Mentoring", ""],
+                "seniority": ["staff_principal", "Senior", "senior", "guru"],
+                "country": " gb ",
             }
         )
     ]
 
     suggestions = extract_resume_suggestions(session, "Resume text")
 
-    assert suggestions.desired_titles == ["Backend Engineer", "Staff Engineer"]
+    # Level words are stripped, so "Senior backend engineer" becomes a duplicate.
+    assert suggestions.desired_titles == ["Backend Engineer", "Platform Engineer"]
+    assert suggestions.seniority == ["senior", "staff_principal"]
+    assert suggestions.country == "GB"
     assert suggestions.hard_skills == ["Python", "SQL"]
     assert suggestions.soft_skills == ["Mentoring"]
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Senior Backend Engineer", "Backend Engineer"),
+        ("Sr. Data Analyst", "Data Analyst"),
+        ("Staff Principal Engineer", "Engineer"),
+        ("Software Engineer III", "Software Engineer"),
+        ("Lead Generation Specialist", "Lead Generation Specialist"),
+        ("Engineering Manager", "Engineering Manager"),
+        ("Senior", "Senior"),
+    ],
+)
+def test_strip_seniority_removes_level_words_only_at_the_edges(title: str, expected: str) -> None:
+    assert strip_seniority(title) == expected

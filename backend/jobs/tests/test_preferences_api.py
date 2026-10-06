@@ -15,7 +15,7 @@ from src.config import Settings
 from src.db.session import get_db
 from src.llm import LlmError
 from src.models import Preferences
-from src.services.resume import MAX_RESUME_BYTES
+from src.services.resume import MAX_RESUME_BYTES, display_filename
 from tests.conftest import TEST_PASSWORD, TEST_USERNAME
 
 PREFERENCES_URL = "/api/v1/preferences"
@@ -129,6 +129,7 @@ def test_get_requires_a_session_and_returns_empty_defaults_before_the_first_save
     assert body["desired_titles"] == [] and body["seniority"] == []
     assert body["country"] is None and body["resume"] is None
     assert body["eeo_answers"]["work_authorization"] is None
+    assert body["auto_apply"] is False
 
 
 def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: FakeSession) -> None:
@@ -142,6 +143,7 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
         "seniority": ["senior", "staff_principal", "senior"],
         "gender": "decline_to_answer",
         "eeo_answers": {"work_authorization": "authorized", "veteran_status": "decline_to_answer"},
+        "auto_apply": True,
     }
 
     response = signed_in.put(PREFERENCES_URL, json=payload)
@@ -153,6 +155,7 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
     assert body["seniority"] == ["senior", "staff_principal"]
     saved = db.rows[1]
     assert saved.salary_max == 150000
+    assert saved.auto_apply is True and body["auto_apply"] is True
     assert saved.eeo_answers == {
         "veteran_status": "decline_to_answer",
         "work_authorization": "authorized",
@@ -174,7 +177,7 @@ def test_put_rejects_invalid_values_with_field_level_detail(signed_in: TestClien
 
 
 @pytest.mark.parametrize("llm_fails", [False, True])
-def test_upload_pdf_stores_resume_text_and_returns_unsaved_suggestions(
+def test_upload_pdf_stores_resume_text_and_saves_suggestions(
     signed_in: TestClient,
     db: FakeSession,
     test_settings: Settings,
@@ -184,10 +187,16 @@ def test_upload_pdf_stores_resume_text_and_returns_unsaved_suggestions(
     (test_settings.resume_folder).mkdir(parents=True)
     old_docx = test_settings.resume_folder / "resume.docx"
     old_docx.write_bytes(_docx("Old resume"))
+    db.add(Preferences(id=1, hard_skills=["Python", "sql"], country="US"))
     suggestions.append(
         LlmError("down")
         if llm_fails
-        else ResumeSuggestions(desired_titles=["Data Engineer"], hard_skills=["SQL"])
+        else ResumeSuggestions(
+            desired_titles=["Data Engineer"],
+            hard_skills=["SQL", "dbt"],
+            seniority=["senior"],
+            country="GB",
+        )
     )
 
     response = _upload(signed_in, "../../My CV.PDF", _pdf("Jane Doe Data Engineer SQL"))
@@ -195,19 +204,32 @@ def test_upload_pdf_stores_resume_text_and_returns_unsaved_suggestions(
     assert response.status_code == 200
     body = response.json()
     assert body["resume"]["file_type"] == "pdf"
+    # Only the name is kept from the client's path.
+    assert body["resume"]["file_name"] == "My CV.PDF"
     stored = test_settings.resume_folder / "resume.pdf"
     assert stored.read_bytes().startswith(b"%PDF")
     assert not old_docx.exists()
     saved = db.rows[1]
     assert saved.resume_location == str(stored)
+    assert saved.resume_filename == "My CV.PDF"
     assert "Data Engineer" in (saved.resume_text or "")
-    assert saved.desired_titles is None
+    assert saved.country == "US"
     if llm_fails:
         assert body["suggestions"] is None
         assert body["warning"]
+        assert saved.desired_titles is None
+        assert saved.hard_skills == ["Python", "sql"]
     else:
         assert body["suggestions"]["desired_titles"] == ["Data Engineer"]
         assert body["warning"] is None
+        # Added after the saved tags; "SQL" duplicates the saved "sql".
+        assert saved.desired_titles == ["Data Engineer"]
+        assert saved.hard_skills == ["Python", "sql", "dbt"]
+        # The saved country is kept; the empty seniority and currency are filled in.
+        assert saved.seniority == ["senior"]
+        assert saved.country == "US" and saved.currency == "USD"
+        assert body["preferences"]["hard_skills"] == ["Python", "sql", "dbt"]
+        assert signed_in.get(PREFERENCES_URL).json()["hard_skills"] == ["Python", "sql", "dbt"]
 
 
 def test_upload_rejects_wrong_types_and_textless_files_keeping_the_old_resume(
@@ -246,7 +268,9 @@ def test_delete_resume_removes_file_and_text_but_keeps_titles_and_skills(
             hard_skills=["SQL"],
         )
     )
-    assert signed_in.get(PREFERENCES_URL).json()["resume"]["file_type"] == "pdf"
+    resume_info = signed_in.get(PREFERENCES_URL).json()["resume"]
+    # Resumes saved before the original name was kept show the stored file's name.
+    assert resume_info["file_type"] == "pdf" and resume_info["file_name"] == "resume.pdf"
 
     response = signed_in.delete(RESUME_URL)
 
@@ -254,6 +278,7 @@ def test_delete_resume_removes_file_and_text_but_keeps_titles_and_skills(
     assert not resume.exists()
     saved = db.rows[1]
     assert saved.resume_location is None and saved.resume_text is None
+    assert saved.resume_filename is None
     assert saved.desired_titles == ["Data Engineer"] and saved.hard_skills == ["SQL"]
 
 
@@ -280,6 +305,29 @@ def test_docx_upload_needs_a_zip_containing_the_word_document_part(
     assert 1 not in db.rows
 
 
+def test_upload_fills_empty_country_currency_and_seniority_but_keeps_chosen_ones(
+    signed_in: TestClient,
+    db: FakeSession,
+    suggestions: list[ResumeSuggestions | Exception],
+) -> None:
+    resume = ResumeSuggestions(seniority=["senior", "staff_principal"], country="GB")
+    suggestions.extend([resume, resume])
+
+    first = _upload(signed_in, "cv.pdf", _pdf("Jane Doe, London"))
+
+    assert first.status_code == 200
+    saved = first.json()["preferences"]
+    assert saved["country"] == "GB" and saved["currency"] == "GBP"
+    assert saved["seniority"] == ["senior", "staff_principal"]
+
+    db.rows[1].country, db.rows[1].currency, db.rows[1].seniority = "CA", "USD", ["mid"]
+    second = _upload(signed_in, "cv.pdf", _pdf("Jane Doe, London"))
+
+    saved = second.json()["preferences"]
+    assert saved["country"] == "CA" and saved["currency"] == "USD"
+    assert saved["seniority"] == ["mid"]
+
+
 def test_replacing_a_pdf_with_a_docx_removes_the_pdf_and_reads_the_word_text(
     signed_in: TestClient,
     db: FakeSession,
@@ -302,7 +350,8 @@ def test_replacing_a_pdf_with_a_docx_removes_the_pdf_and_reads_the_word_text(
     saved = db.rows[1]
     assert saved.resume_location == str(stored)
     assert saved.resume_text == "Jane Doe, Platform Engineer, Kubernetes"
-    assert signed_in.get(PREFERENCES_URL).json()["resume"]["file_type"] == "docx"
+    resume = signed_in.get(PREFERENCES_URL).json()["resume"]
+    assert resume["file_type"] == "docx" and resume["file_name"] == "CV final.docx"
 
 
 def test_upload_over_ten_megabytes_returns_413_and_keeps_the_old_resume(
@@ -321,3 +370,17 @@ def test_upload_over_ten_megabytes_returns_413_and_keeps_the_old_resume(
     assert old_pdf.read_bytes().startswith(b"%PDF") and old_pdf.stat().st_size < 1024
     assert db.rows[1].resume_text == "Old"
     assert db.commits == 0
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("C:\\Users\\jane\\Jane Doe CV.pdf", "Jane Doe CV.pdf"),
+        ("/tmp/resume\x00 2026.pdf", "resume 2026.pdf"),
+        ("  spaced   out.docx ", "spaced out.docx"),
+        ("", "resume.pdf"),
+        (None, "resume.pdf"),
+    ],
+)
+def test_display_filename_keeps_only_a_clean_base_name(filename: str | None, expected: str) -> None:
+    assert display_filename(filename, "pdf") == expected

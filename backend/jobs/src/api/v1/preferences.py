@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.agents.resume_extractor import ResumeSuggestions, extract_resume_suggestions
 from src.api.v1.schemas.preferences import (
+    MAX_TAGS,
     EeoAnswers,
     PreferencesRead,
     PreferencesUpdate,
@@ -18,13 +19,15 @@ from src.config import Settings, get_settings
 from src.db.session import get_db
 from src.models import Preferences
 from src.services import resume as resume_service
-from src.vocabularies import EEO_QUESTION_KEYS
+from src.tags import normalize_tags
+from src.vocabularies import COUNTRY_CURRENCIES, EEO_QUESTION_KEYS
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/preferences", tags=["preferences"])
 
 PREFERENCES_ROW_ID = 1
+SUGGESTED_TAG_FIELDS = ("desired_titles", "hard_skills", "soft_skills")
 SUGGESTIONS_UNAVAILABLE_WARNING = (
     "Your resume was saved, but suggestions could not be generated right now. "
     "You can fill in your titles and skills by hand."
@@ -50,7 +53,11 @@ def _resume_info(preferences: Preferences | None) -> ResumeInfo | None:
     stored = resume_service.stored_resume(preferences.resume_location if preferences else None)
     if stored is None:
         return None
-    return ResumeInfo(file_type=stored.file_type, uploaded_at=stored.uploaded_at)
+    # Resumes uploaded before the name was kept fall back to the stored file's name.
+    file_name = (preferences.resume_filename if preferences else None) or stored.path.name
+    return ResumeInfo(
+        file_type=stored.file_type, file_name=file_name, uploaded_at=stored.uploaded_at
+    )
 
 
 def _to_read(preferences: Preferences | None) -> PreferencesRead:
@@ -73,6 +80,7 @@ def _to_read(preferences: Preferences | None) -> PreferencesRead:
         address=preferences.address,
         gender=preferences.gender,
         eeo_answers=EeoAnswers.model_validate(eeo_answers),
+        auto_apply=bool(preferences.auto_apply),
         resume=_resume_info(preferences),
     )
 
@@ -102,7 +110,13 @@ def upload_resume(
     settings: AppSettings,
     file: Annotated[UploadFile, File(description="The resume as .pdf or .docx, up to 10 MB")],
 ) -> ResumeUploadResponse:
-    """Store the resume, extract its text and return (unsaved) title and skill suggestions."""
+    """Store the resume, extract its text and save what it suggests.
+
+    Suggested titles and skills are added after the saved ones (case-insensitive duplicates are
+    skipped). Seniority, country and currency are filled in only while they are empty, so a
+    choice the user made is never overwritten. The suggestions are returned so the client can
+    show which ones were added.
+    """
     try:
         content = resume_service.read_limited(file.file)
         file_type = resume_service.detect_file_type(file.filename, content)
@@ -116,16 +130,40 @@ def upload_resume(
 
     preferences = _load_or_create(session)
     preferences.resume_location = str(stored.path)
+    file_name = resume_service.display_filename(file.filename, file_type)
+    preferences.resume_filename = file_name
     preferences.resume_text = resume_text
     session.commit()
     logger.info("Resume uploaded type=%s", file_type)
 
     suggestions, warning = _suggestions(session, resume_text)
+    if suggestions is not None:
+        _add_suggestions(preferences, suggestions)
+        session.commit()
     return ResumeUploadResponse(
-        resume=ResumeInfo(file_type=stored.file_type, uploaded_at=stored.uploaded_at),
+        resume=ResumeInfo(
+            file_type=stored.file_type,
+            file_name=file_name,
+            uploaded_at=stored.uploaded_at,
+        ),
         suggestions=suggestions,
         warning=warning,
+        preferences=_to_read(preferences),
     )
+
+
+def _add_suggestions(preferences: Preferences, suggestions: ResumeSuggestions) -> None:
+    for field in SUGGESTED_TAG_FIELDS:
+        saved = getattr(preferences, field) or []
+        merged = normalize_tags([*saved, *getattr(suggestions, field)])
+        # Saved tags come first, so only suggestions are dropped at the limit.
+        setattr(preferences, field, merged[:MAX_TAGS])
+    if not preferences.seniority and suggestions.seniority:
+        preferences.seniority = suggestions.seniority
+    if not preferences.country and suggestions.country:
+        preferences.country = suggestions.country
+    if not preferences.currency and preferences.country:
+        preferences.currency = COUNTRY_CURRENCIES.get(preferences.country)
 
 
 def _suggestions(session: Session, resume_text: str) -> tuple[ResumeSuggestions | None, str | None]:
@@ -144,6 +182,7 @@ def delete_resume(session: DbSession, settings: AppSettings) -> Response:
     preferences = _load(session)
     if preferences is not None:
         preferences.resume_location = None
+        preferences.resume_filename = None
         preferences.resume_text = None
         session.commit()
     logger.info("Resume deleted")

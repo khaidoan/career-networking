@@ -1,12 +1,13 @@
 """Resume upload handling: type checks, size limit, text extraction and atomic storage.
 
 Only one resume is kept, as ``<resume_folder>/resume.pdf`` or ``resume.docx``. The client's
-filename is used for nothing but the extension check.
+filename is used for the extension check and, cleaned by ``display_filename``, for display only.
 """
 
 import io
 import logging
 import os
+import re
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ RESUME_TYPES: tuple[str, ...] = ("pdf", "docx")
 PDF_MAGIC = b"%PDF"
 ZIP_MAGIC = b"PK\x03\x04"
 DOCX_MAIN_PART = "word/document.xml"
+MAX_FILENAME_LENGTH = 255
 
 
 class ResumeError(Exception):
@@ -75,6 +77,14 @@ def detect_file_type(filename: str | None, content: bytes) -> str:
     if extension == "docx" and content.startswith(ZIP_MAGIC) and _has_docx_body(content):
         return "docx"
     raise UnsupportedResumeTypeError("Upload the resume as a PDF (.pdf) or Word (.docx) file.")
+
+
+def display_filename(filename: str | None, file_type: str) -> str:
+    """The client's file name without any directory part or control characters, for display."""
+    # Browsers may send a full path; either separator can appear depending on the client OS.
+    name = re.split(r"[\\/]", filename or "")[-1]
+    name = " ".join(re.sub(r"[\x00-\x1f\x7f]", "", name).split())
+    return name[:MAX_FILENAME_LENGTH] or f"{RESUME_BASENAME}.{file_type}"
 
 
 def _has_docx_body(content: bytes) -> bool:

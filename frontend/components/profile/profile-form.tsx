@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   CircleCheck,
   Loader2,
-  PauseCircle,
   RotateCw,
   Sparkles,
   TriangleAlert,
@@ -12,8 +11,10 @@ import {
 
 import { CompensationSection } from "@/components/profile/compensation-section";
 import { JobPreferencesSection } from "@/components/profile/job-preferences-section";
+import { OtherSection } from "@/components/profile/other-section";
 import { PersonalEeoSection } from "@/components/profile/personal-eeo-section";
 import { ResumeCard } from "@/components/profile/resume-card";
+import { SetupDialog } from "@/components/profile/setup-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,16 +24,19 @@ import {
   type Preferences,
   type ResumeUpload,
 } from "@/lib/api/preferences";
+import { detectCountry } from "@/lib/profile/detect-country";
 import {
+  applyResumeDefaults,
   applySuggestions,
   emptySuggestedTags,
-  isDiscoveryPaused,
+  missingSetup,
   toFormValues,
   toUpdate,
   validate,
   type ProfileFormValues,
   type SuggestedTags,
 } from "@/lib/profile/form";
+import { COUNTRY_CURRENCY } from "@/lib/profile/options";
 import { cn } from "@/lib/utils";
 
 type LoadState =
@@ -52,6 +56,17 @@ const FORM_TO_API_FIELD: Record<string, string> = {
 const CLIENT_INVALID_MESSAGE =
   "Some fields need your attention. Check the messages above.";
 
+/** Form values for `preferences`, with the browser's country filled in when none is saved. */
+function initialValues(preferences: Preferences) {
+  const values = toFormValues(preferences);
+  const detectedCountry = values.country ? undefined : detectCountry();
+  if (detectedCountry) {
+    values.country = detectedCountry;
+    values.currency ||= COUNTRY_CURRENCY[detectedCountry] ?? "";
+  }
+  return { values, detectedCountry };
+}
+
 /** The Profile page: loads the saved preferences, edits them in sections and saves with PUT. */
 export function ProfileForm() {
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
@@ -62,6 +77,10 @@ export function ProfileForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
+  // Opened once per visit when the profile loads without a resume, titles or a country.
+  const [setupOpen, setSetupOpen] = useState(false);
+  // Pre-filled when no country is saved; cleared by the first successful save.
+  const [detectedCountry, setDetectedCountry] = useState<string>();
 
   // Bumped by "Try again" to re-run the load effect.
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -74,8 +93,11 @@ export function ProfileForm() {
           setLoad({ status: "error", message: result.message });
           return;
         }
+        const initial = initialValues(result.preferences);
+        setDetectedCountry(initial.detectedCountry);
         setSaved(result.preferences);
-        setValues(toFormValues(result.preferences));
+        setValues(initial.values);
+        setSetupOpen(missingSetup(result.preferences).length > 0);
         setLoad({ status: "ready" });
       })
       .catch(() => {
@@ -111,12 +133,16 @@ export function ProfileForm() {
   }, []);
 
   function handleUploaded(upload: ResumeUpload) {
-    setSaved((current) => current && { ...current, resume: upload.resume });
+    setSaved(upload.preferences);
     if (!upload.suggestions || !values) {
       return;
     }
+    // The server already saved the suggestions; merging them into the form (rather than taking
+    // the saved values) keeps any edits the user has not saved yet.
     const merged = applySuggestions(values, suggested, upload.suggestions);
-    setValues(merged.values);
+    setValues(
+      applyResumeDefaults(merged.values, upload.preferences, detectedCountry),
+    );
     setSuggested(merged.suggested);
     setSuggestionCount((count) => count + merged.addedCount);
     setSaveStatus({ kind: "idle" });
@@ -185,16 +211,11 @@ export function ProfileForm() {
 
   return (
     <div className="flex flex-col gap-6">
-      {isDiscoveryPaused(saved) && (
-        <Alert variant="warning" role="status">
-          <PauseCircle aria-hidden="true" />
-          <AlertTitle>Job discovery is paused</AlertTitle>
-          <AlertDescription>
-            New jobs are fetched only after you save at least one desired job
-            title and a country.
-          </AlertDescription>
-        </Alert>
-      )}
+      <SetupDialog
+        open={setupOpen}
+        onClose={() => setSetupOpen(false)}
+        missing={missingSetup(saved)}
+      />
 
       <ResumeCard
         resume={saved.resume}
@@ -211,8 +232,7 @@ export function ProfileForm() {
               : `${suggestionCount} suggestions added from your resume`}
           </AlertTitle>
           <AlertDescription>
-            Suggested titles and skills have a dashed outline. Review them,
-            remove any that do not fit, then click Save to keep them.
+            Remove any that do not fit, then click Save.
           </AlertDescription>
         </Alert>
       )}
@@ -233,15 +253,21 @@ export function ProfileForm() {
           values={values}
           errors={errors}
           onChange={update}
+          detectedCountry={saved.country ? undefined : detectedCountry}
         />
         <PersonalEeoSection values={values} errors={errors} onChange={update} />
+        <OtherSection values={values} errors={errors} onChange={update} />
 
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-border bg-background px-4 py-4 sm:flex-row sm:items-center sm:justify-end md:mx-0 md:rounded-xl md:border md:bg-surface md:px-6 md:shadow-soft">
+        <div className="flex flex-col items-center gap-3">
+          <Button type="submit" disabled={saving} aria-busy={saving}>
+            {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
+            {saving ? "Saving…" : "Save"}
+          </Button>
           <p
             aria-live="polite"
             aria-atomic="true"
             className={cn(
-              "flex items-center gap-2 text-sm font-medium sm:mr-auto",
+              "flex items-center gap-2 text-center text-sm font-medium",
               saveStatus.kind === "idle" && "sr-only",
             )}
           >
@@ -258,10 +284,6 @@ export function ProfileForm() {
               <span className="text-destructive">{saveStatus.message}</span>
             )}
           </p>
-          <Button type="submit" disabled={saving} aria-busy={saving}>
-            {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
-            {saving ? "Saving…" : "Save"}
-          </Button>
         </div>
       </form>
     </div>

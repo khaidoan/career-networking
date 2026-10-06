@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { Wallet } from "lucide-react";
 
+import { ComboboxField } from "@/components/profile/combobox-field";
 import { ProfileSection } from "@/components/profile/profile-section";
 import type { SectionProps } from "@/components/profile/section-props";
 import { SelectField } from "@/components/profile/select-field";
@@ -47,12 +48,18 @@ function SalaryField({ id, label, value, onChange, error }: SalaryFieldProps) {
   );
 }
 
+type CompensationSectionProps = SectionProps & {
+  /** Country guessed from the browser and not saved yet; the field says so while it is chosen. */
+  detectedCountry?: string;
+};
+
 /** Preferred country (which also drives the default currency) and the yearly salary range. */
 export function CompensationSection({
   values,
   errors,
   onChange,
-}: SectionProps) {
+  detectedCountry,
+}: CompensationSectionProps) {
   // Stable handlers let the memoized country and currency selects skip salary keystrokes.
   const changeCountry = useCallback(
     (country: string) => {
@@ -74,13 +81,18 @@ export function CompensationSection({
       description="Only jobs in this country (or remote jobs open to it) are fetched."
     >
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <SelectField
+        <ComboboxField
           id="country"
           label="Country"
+          description={
+            detectedCountry && values.country === detectedCountry
+              ? "Detected from your browser. Check it, then click Save."
+              : undefined
+          }
           value={values.country}
           onChange={changeCountry}
           options={COUNTRY_OPTIONS}
-          notSetLabel="Choose a country"
+          placeholder="Type to search countries"
           error={errors.country}
         />
         <SelectField

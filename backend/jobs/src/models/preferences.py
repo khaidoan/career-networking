@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Integer, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Integer, Text, false, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +26,10 @@ class Preferences(TimestampMixin, Base):
     seniority: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     address: Mapped[str | None] = mapped_column(Text)
     resume_location: Mapped[str | None] = mapped_column(Text)
+    resume_filename: Mapped[str | None] = mapped_column(Text)
     resume_text: Mapped[str | None] = mapped_column(Text)
     gender: Mapped[str | None] = mapped_column(Text)
     eeo_answers: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    auto_apply: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )

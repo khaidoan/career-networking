@@ -37,6 +37,8 @@ export type ResumeFileType = "pdf" | "docx";
 
 export type ResumeInfo = {
   file_type: ResumeFileType;
+  /** Name of the uploaded file, as chosen by the user. */
+  file_name: string;
   /** ISO 8601 timestamp of the last upload. */
   uploaded_at: string;
 };
@@ -56,6 +58,8 @@ export type PreferencesUpdate = {
   address: string | null;
   gender: string | null;
   eeo_answers: EeoAnswers;
+  /** Whether jobs may be applied to automatically; off by default. */
+  auto_apply: boolean;
 };
 
 export type Preferences = PreferencesUpdate & { resume: ResumeInfo | null };
@@ -64,13 +68,21 @@ export type ResumeSuggestions = {
   desired_titles: string[];
   hard_skills: string[];
   soft_skills: string[];
+  seniority: string[];
+  /** ISO 3166-1 alpha-2 code, or `null` when the resume does not make it clear. */
+  country: string | null;
 };
 
 export type ResumeUpload = {
   resume: ResumeInfo;
-  /** `null` when the model could not produce suggestions; `warning` then says why. */
+  /**
+   * Already added to the saved preferences. `null` when the model could not produce
+   * suggestions; `warning` then says why.
+   */
   suggestions: ResumeSuggestions | null;
   warning: string | null;
+  /** Everything saved after the upload, suggestions included. */
+  preferences: Preferences;
 };
 
 export type PreferencesResult =

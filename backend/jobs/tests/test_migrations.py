@@ -28,6 +28,8 @@ EXPECTED_REVISION_ORDER = [
     "add_companies_contacts_searched_at",
     "normalize_company_networking_linkedin_urls",
     "add_company_networking_linkedin_url_unique_index",
+    "add_preferences_resume_filename",
+    "add_preferences_auto_apply",
 ]
 
 

@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import {
-  FileText,
-  FileUser,
-  Loader2,
-  Trash2,
-  TriangleAlert,
-  Upload,
-} from "lucide-react";
+import { FileUser, Loader2, Trash2, TriangleAlert, Upload } from "lucide-react";
 
 import { ProfileSection } from "@/components/profile/profile-section";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -27,11 +20,6 @@ const MAX_RESUME_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx"];
 const ACCEPT =
   ".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-const FILE_TYPE_LABELS: Record<ResumeInfo["file_type"], string> = {
-  pdf: "PDF document",
-  docx: "Word document",
-};
 
 type Busy = "uploading" | "deleting" | null;
 
@@ -65,7 +53,7 @@ function checkFile(file: File): string | null {
   return null;
 }
 
-/** Current resume with Upload / Replace and Delete (after an inline confirmation). */
+/** Current resume with Upload (while there is none) and Delete (after an inline confirmation). */
 export function ResumeCard({ resume, onUploaded, onDeleted }: ResumeCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
@@ -136,52 +124,49 @@ export function ResumeCard({ resume, onUploaded, onDeleted }: ResumeCardProps) {
     >
       <div className="flex flex-col gap-4" aria-busy={isBusy}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-accent">
-              <FileText className="size-5" aria-hidden="true" />
-            </span>
-            {resume ? (
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {FILE_TYPE_LABELS[resume.file_type]}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Uploaded {formatUploadedAt(resume.uploaded_at)}
-                </p>
-              </div>
-            ) : (
+          {resume ? (
+            <div className="min-w-0">
+              <p className="font-medium break-words">{resume.file_name}</p>
               <p className="text-sm text-muted-foreground">
-                No resume uploaded yet.
+                Uploaded {formatUploadedAt(resume.uploaded_at)}
               </p>
-            )}
-          </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No resume uploaded yet.
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
-            <input
-              ref={fileInputRef}
-              id="resume-file"
-              type="file"
-              accept={ACCEPT}
-              className="sr-only"
-              tabIndex={-1}
-              aria-label="Resume file"
-              onChange={handleFileChange}
-              disabled={isBusy}
-            />
-            <Button
-              type="button"
-              variant={resume ? "outline" : "default"}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isBusy}
-              aria-busy={busy === "uploading"}
-            >
-              {busy === "uploading" ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Upload aria-hidden="true" />
-              )}
-              {resume ? "Replace resume" : "Upload resume"}
-            </Button>
+            {/* One resume at a time: delete it to upload a different one. */}
+            {!resume && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  id="resume-file"
+                  type="file"
+                  accept={ACCEPT}
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-label="Resume file"
+                  onChange={handleFileChange}
+                  disabled={isBusy}
+                />
+                <Button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isBusy}
+                  aria-busy={busy === "uploading"}
+                >
+                  {busy === "uploading" ? (
+                    <Loader2 className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Upload aria-hidden="true" />
+                  )}
+                  Upload resume
+                </Button>
+              </>
+            )}
             {resume && !confirmingDelete && (
               <Button
                 type="button"

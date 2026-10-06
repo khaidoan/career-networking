@@ -1,5 +1,7 @@
 export const DEFAULT_AUTHENTICATED_PATH = "/inbox/recommended";
 export const LOGIN_PATH = "/login";
+/** Where the default path sends the user until their profile is set up. */
+export const PROFILE_PATH = "/profile";
 
 // Placeholder origin used only to parse relative paths; never appears in a redirect.
 const PARSE_ORIGIN = "http://in-app.invalid";

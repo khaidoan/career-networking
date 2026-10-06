@@ -9,7 +9,11 @@ import type {
   PreferencesUpdate,
   ResumeSuggestions,
 } from "@/lib/api/preferences";
-import { EEO_QUESTION_KEYS, type EeoQuestionKey } from "@/lib/profile/options";
+import {
+  COUNTRY_CURRENCY,
+  EEO_QUESTION_KEYS,
+  type EeoQuestionKey,
+} from "@/lib/profile/options";
 
 export const TAG_FIELDS = [
   "desired_titles",
@@ -32,9 +36,10 @@ export type ProfileFormValues = Record<TagField, string[]> & {
   address: string;
   gender: string;
   eeoAnswers: Record<EeoQuestionKey, string>;
+  autoApply: boolean;
 };
 
-/** Lower-cased tags per field that came from resume suggestions and are not saved yet. */
+/** Lower-cased tags per field added from the latest resume upload, highlighted for review. */
 export type SuggestedTags = Record<TagField, ReadonlySet<string>>;
 
 export function emptySuggestedTags(): SuggestedTags {
@@ -95,6 +100,34 @@ export function applySuggestions(
   return { values: nextValues, suggested: nextSuggested, addedCount };
 }
 
+/**
+ * Take the seniority, country and currency the server filled in from a resume for the fields
+ * still empty in the form. A country guessed from the browser (`guessedCountry`, not saved)
+ * counts as empty, and so does the currency that guess filled in.
+ */
+export function applyResumeDefaults(
+  values: ProfileFormValues,
+  saved: Pick<Preferences, "seniority" | "country" | "currency">,
+  guessedCountry?: string,
+): ProfileFormValues {
+  const next = { ...values };
+  if (next.seniority.length === 0) {
+    next.seniority = saved.seniority;
+  }
+  const countryIsGuess =
+    !next.country || (!!guessedCountry && next.country === guessedCountry);
+  const guessedCurrency = guessedCountry && COUNTRY_CURRENCY[guessedCountry];
+  if (saved.country && countryIsGuess) {
+    next.country = saved.country;
+    if (!next.currency || next.currency === guessedCurrency) {
+      next.currency = saved.currency ?? "";
+    }
+  } else if (!next.currency && saved.currency) {
+    next.currency = saved.currency;
+  }
+  return next;
+}
+
 export function toFormValues(preferences: Preferences): ProfileFormValues {
   const eeoAnswers = Object.fromEntries(
     EEO_QUESTION_KEYS.map((key) => [key, preferences.eeo_answers?.[key] ?? ""]),
@@ -111,6 +144,7 @@ export function toFormValues(preferences: Preferences): ProfileFormValues {
     address: preferences.address ?? "",
     gender: preferences.gender ?? "",
     eeoAnswers,
+    autoApply: preferences.auto_apply ?? false,
   };
 }
 
@@ -165,12 +199,28 @@ export function toUpdate(values: ProfileFormValues): PreferencesUpdate {
     address: values.address.trim() || null,
     gender: values.gender || null,
     eeo_answers: eeoAnswers,
+    auto_apply: values.autoApply,
   };
 }
 
-/** The fetcher skips every run until both desired titles and a country are saved. */
-export function isDiscoveryPaused(
-  preferences: Pick<Preferences, "desired_titles" | "country">,
-) {
-  return preferences.desired_titles.length === 0 || !preferences.country;
+export type SetupItem = "resume" | "desired_titles" | "country";
+
+/**
+ * What the user still has to provide before the app is useful: a resume (to score jobs), plus at
+ * least one desired job title and a country (the fetcher skips every run until both are saved).
+ */
+export function missingSetup(
+  preferences: Pick<Preferences, "resume" | "desired_titles" | "country">,
+): SetupItem[] {
+  const missing: SetupItem[] = [];
+  if (!preferences.resume) {
+    missing.push("resume");
+  }
+  if (preferences.desired_titles.length === 0) {
+    missing.push("desired_titles");
+  }
+  if (!preferences.country) {
+    missing.push("country");
+  }
+  return missing;
 }

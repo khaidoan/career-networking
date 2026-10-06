@@ -126,6 +126,7 @@ class PreferencesFields(BaseModel):
     ] = None
     gender: Annotated[GenderSlug | None, BeforeValidator(_blank_to_none)] = None
     eeo_answers: EeoAnswers = EeoAnswers()
+    auto_apply: bool = False
 
 
 class PreferencesUpdate(PreferencesFields):
@@ -142,6 +143,7 @@ class PreferencesUpdate(PreferencesFields):
 
 class ResumeInfo(BaseModel):
     file_type: ResumeFileType
+    file_name: str
     uploaded_at: datetime
 
 
@@ -150,8 +152,10 @@ class PreferencesRead(PreferencesFields):
 
 
 class ResumeUploadResponse(BaseModel):
-    """Suggestions are returned for review only; they are saved by a later ``PUT``."""
+    """The suggestions returned here have already been added to the saved preferences."""
 
     resume: ResumeInfo
     suggestions: ResumeSuggestions | None
     warning: str | None = None
+    # Everything saved after the upload, suggestions included.
+    preferences: PreferencesRead
