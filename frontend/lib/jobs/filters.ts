@@ -1,9 +1,16 @@
 /**
- * Inbox filters in the page URL. Query parameter names match the API's (`seniority`,
+ * Inbox filters in the page URL. Query parameter names match the API's (`match`, `seniority`,
  * `work_arrangement`, `job_type`, `visa`, `liked`, `company`), and unknown values are dropped.
  */
 
 import type { JobFilters } from "@/lib/api/jobs";
+import {
+  EXCELLENT_MATCH_MIN,
+  GOOD_MATCH_MAX,
+  GOOD_MATCH_MIN,
+  STRONG_MATCH_MAX,
+  STRONG_MATCH_MIN,
+} from "@/lib/jobs/format";
 import {
   JOB_TYPE_OPTIONS,
   SENIORITY_OPTIONS,
@@ -13,13 +20,27 @@ import {
 
 type ReadableParams = Pick<URLSearchParams, "get" | "getAll">;
 
-export type MultiFilterKey = "seniority" | "work_arrangement" | "job_type";
+export type MultiFilterKey =
+  "match" | "seniority" | "work_arrangement" | "job_type";
+
+/** Values match the API's `match` slugs; "Not scored" finds jobs whose evaluation failed. */
+export const MATCH_STRENGTH_OPTIONS: readonly Option[] = [
+  { value: "excellent", label: `Excellent (${EXCELLENT_MATCH_MIN}+)` },
+  {
+    value: "strong",
+    label: `Strong (${STRONG_MATCH_MIN}–${STRONG_MATCH_MAX})`,
+  },
+  { value: "good", label: `Good (${GOOD_MATCH_MIN}–${GOOD_MATCH_MAX})` },
+  { value: "weak", label: `Weak (below ${GOOD_MATCH_MIN})` },
+  { value: "not_scored", label: "Not scored" },
+];
 
 export const MULTI_FILTERS: readonly {
   key: MultiFilterKey;
   label: string;
   options: readonly Option[];
 }[] = [
+  { key: "match", label: "Match strength", options: MATCH_STRENGTH_OPTIONS },
   { key: "seniority", label: "Seniority", options: SENIORITY_OPTIONS },
   {
     key: "work_arrangement",
@@ -36,6 +57,7 @@ export const VISA_FILTER_OPTIONS: readonly Option[] = [
 
 /** Changes that remove every inbox filter and the company search. */
 export const CLEAR_JOB_FILTERS = {
+  match: null,
   seniority: null,
   work_arrangement: null,
   job_type: null,
@@ -52,6 +74,7 @@ function known(values: string[], options: readonly Option[]): string[] {
 export function jobFiltersFromParams(params: ReadableParams): JobFilters {
   const visa = params.get("visa");
   return {
+    match: known(params.getAll("match"), MATCH_STRENGTH_OPTIONS),
     seniority: known(params.getAll("seniority"), SENIORITY_OPTIONS),
     work_arrangement: known(
       params.getAll("work_arrangement"),

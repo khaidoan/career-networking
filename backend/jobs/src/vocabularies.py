@@ -23,6 +23,18 @@ WORK_ARRANGEMENTS: tuple[str, ...] = ("remote", "hybrid", "onsite")
 
 JOB_TYPES: tuple[str, ...] = ("full_time", "part_time", "contract", "internship", "temporary")
 
+# Overall score ranges (inclusive) for each match strength, used by the inbox filter. The
+# frontend keeps the same ranges in ``lib/jobs/format.ts``.
+MATCH_STRENGTH_SCORES: dict[str, tuple[int, int]] = {
+    "excellent": (95, 100),
+    "strong": (80, 94),
+    "good": (60, 79),
+    "weak": (0, 59),
+}
+# Matches jobs whose evaluation failed, so they have no score.
+NOT_SCORED = "not_scored"
+MATCH_STRENGTHS: tuple[str, ...] = (*MATCH_STRENGTH_SCORES, NOT_SCORED)
+
 GENDER_OPTIONS: tuple[str, ...] = ("female", "male", "non_binary", DECLINE_TO_ANSWER)
 
 EEO_ANSWER_OPTIONS: dict[str, tuple[str, ...]] = {

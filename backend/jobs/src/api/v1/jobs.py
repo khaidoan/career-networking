@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import AfterValidator
-from sqlalchemy import Row, select
+from sqlalchemy import ColumnElement, Row, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.v1.common import (
@@ -27,7 +27,14 @@ from src.models import INBOX_PENDING, LISTED_INBOXES, Company, Job
 from src.services.contacts import contact_search_availability
 from src.services.paging import SortKey, as_datetime, as_int
 from src.services.search import name_matches, normalize_search
-from src.vocabularies import JOB_TYPES, SENIORITY_LEVELS, WORK_ARRANGEMENTS
+from src.vocabularies import (
+    JOB_TYPES,
+    MATCH_STRENGTH_SCORES,
+    MATCH_STRENGTHS,
+    NOT_SCORED,
+    SENIORITY_LEVELS,
+    WORK_ARRANGEMENTS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +58,14 @@ InboxSlug = Annotated[str, AfterValidator(one_of(LISTED_INBOXES))]
 SenioritySlug = Annotated[str, AfterValidator(one_of(SENIORITY_LEVELS))]
 WorkArrangementSlug = Annotated[str, AfterValidator(one_of(WORK_ARRANGEMENTS))]
 JobTypeSlug = Annotated[str, AfterValidator(one_of(JOB_TYPES))]
+MatchStrengthSlug = Annotated[str, AfterValidator(one_of(MATCH_STRENGTHS))]
+
+
+def _match_strength_condition(strength: str) -> ColumnElement[bool]:
+    if strength == NOT_SCORED:
+        return Job.overall_score.is_(None)
+    low, high = MATCH_STRENGTH_SCORES[strength]
+    return Job.overall_score.between(low, high)
 
 
 def _job_sort_values(row: Row[tuple[Job, Company]]) -> list[object]:
@@ -62,6 +77,7 @@ def _job_sort_values(row: Row[tuple[Job, Company]]) -> list[object]:
 def list_jobs(
     session: DbSession,
     inbox: Annotated[InboxSlug, Query()],
+    match: Annotated[list[MatchStrengthSlug], Query()] = [],  # noqa: B006
     seniority: Annotated[list[SenioritySlug], Query()] = [],  # noqa: B006
     work_arrangement: Annotated[list[WorkArrangementSlug], Query()] = [],  # noqa: B006
     job_type: Annotated[list[JobTypeSlug], Query()] = [],  # noqa: B006
@@ -81,6 +97,8 @@ def list_jobs(
     Filters of different kinds combine with AND; several values of one filter match any of them.
     """
     statement = select(Job, Company).join(Job.company).where(Job.inbox_type == inbox)
+    if match:
+        statement = statement.where(or_(*(_match_strength_condition(m) for m in set(match))))
     if seniority:
         statement = statement.where(Job.seniority_level.in_(seniority))
     if work_arrangement:

@@ -61,6 +61,8 @@ export type JobDetail = JobCard & {
 
 /** Inbox filters, named after their query parameters (empty values are not sent). */
 export type JobFilters = {
+  /** Match strength slugs, e.g. `excellent` or `not_scored`. */
+  match: string[];
   seniority: string[];
   work_arrangement: string[];
   job_type: string[];
@@ -92,7 +94,12 @@ export function jobListQuery(
   cursor?: string | null,
 ): URLSearchParams {
   const query = new URLSearchParams({ inbox });
-  for (const key of ["seniority", "work_arrangement", "job_type"] as const) {
+  for (const key of [
+    "match",
+    "seniority",
+    "work_arrangement",
+    "job_type",
+  ] as const) {
     for (const value of filters[key]) {
       query.append(key, value);
     }

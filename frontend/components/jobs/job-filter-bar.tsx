@@ -160,7 +160,7 @@ export function JobFilterBar() {
         idPrefix="filter"
         filters={filters}
         onChange={setFilters}
-        className="hidden items-end gap-4 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+        className="hidden items-end gap-4 md:grid md:grid-cols-2 lg:grid-cols-3"
       />
       {canClear && (
         <Button

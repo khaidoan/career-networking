@@ -432,3 +432,36 @@ def test_job_list_filters_by_visa_work_arrangement_and_job_type(
         ).status_code
         == 422
     )
+
+
+def test_job_list_filters_by_match_strength(
+    signed_in: TestClient, migrated_sessions: sessionmaker[Session]
+) -> None:
+    with migrated_sessions() as session, session.begin():
+        acme = _company(session, "Acme")
+        for title, score in (
+            ("Score 95", 95),
+            ("Score 94", 94),
+            ("Score 80", 80),
+            ("Score 79", 79),
+            ("Score 60", 60),
+            ("Score 59", 59),
+            ("Not scored", None),
+        ):
+            _job(session, acme, title, overall_score=score, inbox_type="ignored")
+
+    def titles(*match: str) -> list[str]:
+        response = signed_in.get("/api/v1/jobs", params={"inbox": "ignored", "match": match})
+        return sorted(_titles(response))
+
+    assert titles("excellent") == ["Score 95"]
+    assert titles("strong") == ["Score 80", "Score 94"]
+    assert titles("good") == ["Score 60", "Score 79"]
+    assert titles("weak") == ["Score 59"]
+    assert titles("not_scored") == ["Not scored"]
+    assert titles("excellent", "weak") == ["Score 59", "Score 95"]
+    assert len(titles()) == 7
+    assert (
+        signed_in.get("/api/v1/jobs", params={"inbox": "ignored", "match": "great"}).status_code
+        == 422
+    )

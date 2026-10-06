@@ -2,10 +2,14 @@
 
 import type { JobCard } from "@/lib/api/jobs";
 
-export type MatchStrength = "Strong" | "Good" | "Weak";
+export type MatchStrength = "Excellent" | "Strong" | "Good" | "Weak";
 
+// The backend keeps the same ranges in `MATCH_STRENGTH_SCORES` (src/vocabularies.py).
+export const EXCELLENT_MATCH_MIN = 95;
 export const STRONG_MATCH_MIN = 80;
+export const STRONG_MATCH_MAX = EXCELLENT_MATCH_MIN - 1;
 export const GOOD_MATCH_MIN = 60;
+export const GOOD_MATCH_MAX = STRONG_MATCH_MIN - 1;
 
 const DATE_FORMAT = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
 
@@ -19,8 +23,11 @@ export function formatLocation(
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
-/** Strong (80 and up), Good (60–79) or Weak (below 60). */
+/** Excellent (95 and up), Strong (80–94), Good (60–79) or Weak (below 60). */
 export function matchStrength(score: number): MatchStrength {
+  if (score >= EXCELLENT_MATCH_MIN) {
+    return "Excellent";
+  }
   if (score >= STRONG_MATCH_MIN) {
     return "Strong";
   }

@@ -5,6 +5,7 @@ import {
   SignalHigh,
   SignalLow,
   SignalMedium,
+  Sparkles,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { matchStrength, type MatchStrength } from "@/lib/jobs/format";
 import { cn } from "@/lib/utils";
 
 const STRENGTH_STYLES = {
+  Excellent: { variant: "success", icon: Sparkles },
   Strong: { variant: "success", icon: SignalHigh },
   Good: { variant: "default", icon: SignalMedium },
   Weak: { variant: "outline", icon: SignalLow },
