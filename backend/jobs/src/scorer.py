@@ -38,10 +38,12 @@ from src.services.evaluation import (
     apply_evaluation_failure,
     apply_evaluation_success,
 )
+from src.sources.filters import RECENCY_WINDOW
 
 logger = logging.getLogger(__name__)
 
-SCORING_WINDOW = timedelta(hours=24)
+# The fetcher's recency window, so every job it saves can be scored while still recent.
+SCORING_WINDOW = RECENCY_WINDOW
 MAX_SCORING_ATTEMPTS = 3
 # Wait before the 2nd and 3rd attempts; long enough to ride out a short provider outage.
 RETRY_DELAYS = (timedelta(minutes=5), timedelta(minutes=30))

@@ -147,7 +147,7 @@ The `fetcher` service (in both compose files) is built from the `backend/jobs` i
 - **Title:** the title contains every word of one of your desired titles.
 - **Seniority:** only if you picked seniority levels on the Profile page. A posting is dropped only when its title plainly names a level at least two steps from every level you picked (for example "Intern" or "VP" for a Senior search). Only unambiguous words count (intern, junior, new grad, senior, sr, principal, director, VP, chief … officer). Titles with no level word, or with an ambiguous one such as "Manager", "Lead", "Staff", "Head" or "Associate", always pass, and the evaluator judges them.
 - **Country:** the location names your country, or is remote without naming another country. A bare "Remote" on an ATS board is dropped only when the board's other postings name other countries but never yours (for example a German company's "Remote" role in a US search). Google Jobs searches are already country-scoped, so a bare "Remote" there is kept.
-- **Recency:** published in the last 48 hours. Postings with no publish date, or older than 48 hours, are never processed.
+- **Recency:** published in the last 24 hours. Postings with no publish date, or older than 24 hours, are never processed.
 
 **Duplicates.** Postings are deduplicated by URL, ignoring tracking parameters. A Google Jobs posting whose link is not an ATS link (for example LinkedIn or Indeed) is also skipped when an ATS source already has the same job: same company (ignoring suffixes such as "Inc." or "Corp"), same title and a compatible country, found this run or in the last 30 days.
 
@@ -169,7 +169,7 @@ The stack must be running. The command runs one full fetch in the foreground, pr
 
 **Logs** go to `backend/logs/fetcher.log` and to `docker compose logs fetcher` (add `-f dev-docker-compose.yml` for dev). Every completed run ends with a `Fetcher run finished in …` line counting fetched, matched, new, duplicate and failed postings per source, plus how many jobs were queued for scoring and how many old ignored jobs were deleted. The ATS sweep logs its progress every 2,000 boards. The scorer logs a line for each batch it scores.
 
-**Ignored and pending jobs are deleted after 7 days.** Every fetcher run, including one skipped because preferences are incomplete, deletes jobs in the Ignored inbox and jobs still waiting to be scored that were discovered more than 7 days ago (`JOB_RETENTION` in `backend/jobs/src/fetcher.py`). This includes jobs whose evaluation failed. Postings are only picked up while under 48 hours old, so a deleted job does not come back. Jobs in the other inboxes are never deleted.
+**Ignored and pending jobs are deleted after 7 days.** Every fetcher run, including one skipped because preferences are incomplete, deletes jobs in the Ignored inbox and jobs still waiting to be scored that were discovered more than 7 days ago (`JOB_RETENTION` in `backend/jobs/src/fetcher.py`). This includes jobs whose evaluation failed. Postings are only picked up while under 24 hours old, so a deleted job does not come back. Jobs in the other inboxes are never deleted.
 
 Run state (the Google Jobs last-run time and the sweep position) and the directory cache live in `backend/data/jobs/_fetcher/`. Deleting that folder is safe: it only restarts the sweep rotation and makes Google Jobs due on the next run.
 

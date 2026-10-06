@@ -265,7 +265,7 @@ def test_evaluation_error_is_one_line_and_capped() -> None:
     assert evaluation.describe_evaluation_error(TimeoutError()) == "TimeoutError"
 
 
-def test_google_jobs_postings_older_than_48_hours_or_undated_are_not_processed(
+def test_google_jobs_postings_older_than_24_hours_or_undated_are_not_processed(
     test_settings: Settings,
     sessions: sessionmaker[Session],
     sources: FakeSources,
@@ -278,7 +278,7 @@ def test_google_jobs_postings_older_than_48_hours_or_undated_are_not_processed(
     stale = _posting(
         "Backend Engineer", "Initech", "https://example.com/jobs/2", "google_jobs:Indeed"
     )
-    stale.published_at = NOW - timedelta(hours=49)
+    stale.published_at = NOW - timedelta(hours=25)
     undated = _posting(
         "Backend Engineer", "Initech", "https://example.com/jobs/3", "google_jobs:Indeed"
     )
@@ -568,11 +568,9 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
     assert (
         tracked_job.company_id == jobs["https://job-boards.greenhouse.io/acme/jobs/101"].company_id
     )
-    # Acme's job 101 was posted 46 hours earlier: saved (under 48 hours) but outside the scorer's
-    # 24-hour window, so it stays pending. The other two are recommended, so the scorer tries to
-    # fill in each one's name-only company (the lookups fail, leaving the names).
-    assert jobs["https://job-boards.greenhouse.io/acme/jobs/101"].inbox_type == "pending"
-    assert sorted(enriched) == ["Acme Corp", "Globex"]
+    # All three jobs are recommended, so the scorer tries to fill in each one's name-only company
+    # (the lookups fail, leaving the names).
+    assert sorted(enriched) == ["Acme Corp", "Acme Corp", "Globex"]
 
 
 def test_ignored_and_pending_jobs_older_than_seven_days_are_deleted_even_when_paused(

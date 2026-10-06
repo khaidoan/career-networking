@@ -9,7 +9,7 @@ and the run continues. A Postgres advisory lock keeps two runs from overlapping.
 
 The fetcher spends no LLM tokens: new jobs are saved in the "pending" inbox, with the company by
 name only, and the scorer (``src.scorer``) evaluates them. Only postings that pass the free
-filters (title, seniority, country, 48-hour recency) and both duplicate checks are saved.
+filters (title, seniority, country, 24-hour recency) and both duplicate checks are saved.
 
 The ``fetcher`` compose service runs this once when the container starts, and its scheduler
 calls ``python -m src.fetcher --if-due`` every few minutes, which runs only at the daily time
@@ -71,8 +71,8 @@ logger = logging.getLogger("src.fetcher")
 ADVISORY_LOCK_KEY = 0x636E5F6665746368
 # Active boards whose last match is older than this stop being polled until rediscovered.
 BOARD_PRUNE_AFTER = timedelta(days=30)
-# Ignored jobs discovered longer ago than this are deleted. Postings are only ingested while
-# under 48 hours old, so a deleted job cannot come back through the same posting.
+# Ignored and pending jobs discovered longer ago than this are deleted. Postings are only
+# ingested while under 24 hours old, so a deleted job cannot come back through the same posting.
 JOB_RETENTION = timedelta(days=7)
 TRACKED_POLL_CONCURRENCY = 8
 # How far back a Google posting is compared against ATS jobs for the cross-source duplicate check.

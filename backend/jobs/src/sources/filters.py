@@ -4,10 +4,10 @@ These checks are free; only postings that pass them reach the evaluator, so they
 spend is controlled. Every rule errs on the side of keeping a posting: when a check cannot tell,
 the evaluator decides.
 
-``RECENCY_WINDOW`` (48 hours) is the posting recency window, and postings without a
-publish date are skipped (``is_recent`` returns ``False``). Both rules live only in this module;
-the fetcher applies ``is_recent`` to Google Jobs postings too, so no posting older than the
-window is ever processed.
+``RECENCY_WINDOW`` (24 hours) is the posting recency window, and postings without a publish
+date are skipped (``is_recent`` returns ``False``). Both rules live only in this module; the
+fetcher applies ``is_recent`` to Google Jobs postings too, so no posting older than the window is
+ever processed. The scorer uses the same window, so every saved job can be scored.
 """
 
 import re
@@ -18,7 +18,7 @@ from src.models import Preferences
 from src.sources.locations import countries_in, is_remote
 from src.vocabularies import SENIORITY_LEVELS
 
-RECENCY_WINDOW = timedelta(hours=48)
+RECENCY_WINDOW = timedelta(hours=24)
 
 _TOKEN = re.compile(r"[\w+#]+")
 

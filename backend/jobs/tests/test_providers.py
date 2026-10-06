@@ -54,7 +54,7 @@ def test_greenhouse_lever_and_ashby_boards_map_to_normalized_postings(
         "Austin, Texas",
     )
     assert greenhouse.url == "https://job-boards.greenhouse.io/acme/jobs/101"
-    assert greenhouse.published_at == datetime(2026, 9, 23, 14, 0, tzinfo=UTC)
+    assert greenhouse.published_at == datetime(2026, 9, 24, 14, 0, tzinfo=UTC)
     assert greenhouse.description == "Build & ship APIs in Python.\n5+ years"
     assert greenhouse.board == BoardRef(
         "greenhouse", "acme", None, "https://job-boards.greenhouse.io/acme"
