@@ -51,6 +51,8 @@ class SearchCriteria:
     country: str
     # Selected seniority levels; empty means no seniority filtering.
     seniority: tuple[str, ...] = ()
+    # A title containing every word of one of these is skipped, even if it matches a title.
+    excluded_title_words: tuple[str, ...] = ()
 
     @classmethod
     def from_preferences(cls, preferences: Preferences | None) -> "SearchCriteria | None":
@@ -63,21 +65,36 @@ class SearchCriteria:
         seniority = tuple(
             level for level in preferences.seniority or () if level in SENIORITY_LEVELS
         )
-        return cls(desired_titles=titles, country=preferences.country, seniority=seniority)
+        excluded = tuple(words for words in preferences.excluded_title_words or () if words.strip())
+        return cls(
+            desired_titles=titles,
+            country=preferences.country,
+            seniority=seniority,
+            excluded_title_words=excluded,
+        )
 
 
 def _tokens(text: str) -> set[str]:
     return set(_TOKEN.findall(text.casefold()))
 
 
-def title_matches(title: str, desired_titles: tuple[str, ...]) -> bool:
-    """True when every word of at least one desired title appears in ``title``."""
-    title_tokens = _tokens(title)
-    for desired in desired_titles:
-        desired_tokens = _tokens(desired)
-        if desired_tokens and desired_tokens <= title_tokens:
+def _contains_any(title_tokens: set[str], phrases: tuple[str, ...]) -> bool:
+    """True when every word of at least one of ``phrases`` is among ``title_tokens``."""
+    for phrase in phrases:
+        phrase_tokens = _tokens(phrase)
+        if phrase_tokens and phrase_tokens <= title_tokens:
             return True
     return False
+
+
+def title_matches(
+    title: str, desired_titles: tuple[str, ...], excluded_title_words: tuple[str, ...] = ()
+) -> bool:
+    """True when ``title`` has every word of a desired title and of no excluded entry."""
+    title_tokens = _tokens(title)
+    return _contains_any(title_tokens, desired_titles) and not _contains_any(
+        title_tokens, excluded_title_words
+    )
 
 
 def title_seniority_levels(title: str) -> set[str]:
@@ -140,7 +157,7 @@ def is_recent(published_at: datetime | None, now: datetime) -> bool:
 def matches_title_and_location(title: str, location: str, criteria: SearchCriteria) -> bool:
     """The cheap checks, run before any extra request is spent on a posting."""
     return (
-        title_matches(title, criteria.desired_titles)
+        title_matches(title, criteria.desired_titles, criteria.excluded_title_words)
         and seniority_matches(title, criteria.seniority)
         and location_matches(location, criteria.country)
     )

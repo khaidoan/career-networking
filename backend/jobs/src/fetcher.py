@@ -303,7 +303,9 @@ class FetcherRun:
 
     def _google_posting_matches(self, posting: Posting) -> bool:
         return (
-            title_matches(posting.title, self.criteria.desired_titles)
+            title_matches(
+                posting.title, self.criteria.desired_titles, self.criteria.excluded_title_words
+            )
             and seniority_matches(posting.title, self.criteria.seniority)
             and location_matches(posting.location, self.criteria.country)
             and is_recent(posting.published_at, self.now)

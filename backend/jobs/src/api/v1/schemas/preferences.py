@@ -124,6 +124,7 @@ class PreferencesFields(BaseModel):
     """Every editable preference; ``PUT`` replaces all of them at once."""
 
     desired_titles: TagList = []
+    excluded_title_words: TagList = []
     hard_skills: TagList = []
     soft_skills: TagList = []
     country: Annotated[CountryCode | None, BeforeValidator(_code_or_none)] = None

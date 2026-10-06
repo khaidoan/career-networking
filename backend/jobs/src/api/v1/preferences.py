@@ -83,6 +83,7 @@ def _to_read(preferences: Preferences | None) -> PreferencesRead:
     }
     return PreferencesRead(
         desired_titles=preferences.desired_titles or [],
+        excluded_title_words=preferences.excluded_title_words or [],
         hard_skills=preferences.hard_skills or [],
         soft_skills=preferences.soft_skills or [],
         country=preferences.country,

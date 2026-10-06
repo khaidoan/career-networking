@@ -141,6 +141,7 @@ def test_get_requires_a_session_and_returns_empty_defaults_before_the_first_save
 def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: FakeSession) -> None:
     payload = {
         "desired_titles": [" Backend Engineer ", "backend engineer", "Platform  Engineer"],
+        "excluded_title_words": ["QA", " qa ", "Site  Reliability"],
         "hard_skills": ["Python"],
         "country": "us",
         "currency": "USD",
@@ -160,6 +161,8 @@ def test_put_upserts_row_one_with_normalised_values(signed_in: TestClient, db: F
     assert response.status_code == 200
     body = response.json()
     assert body["desired_titles"] == ["Backend Engineer", "Platform Engineer"]
+    assert body["excluded_title_words"] == ["QA", "Site Reliability"]
+    assert db.rows[1].excluded_title_words == ["QA", "Site Reliability"]
     assert body["country"] == "US"
     assert body["seniority"] == ["senior", "staff_principal"]
     saved = db.rows[1]

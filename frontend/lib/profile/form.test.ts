@@ -5,6 +5,7 @@ import type { Preferences } from "@/lib/api/preferences";
 
 const EMPTY: Preferences = {
   desired_titles: [],
+  excluded_title_words: [],
   hard_skills: [],
   soft_skills: [],
   country: null,

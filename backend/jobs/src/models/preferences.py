@@ -17,6 +17,8 @@ class Preferences(TimestampMixin, Base):
         Integer, primary_key=True, autoincrement=False, default=1, server_default=text("1")
     )
     desired_titles: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    # A posting whose title contains every word of one of these is skipped by the fetcher.
+    excluded_title_words: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     hard_skills: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     soft_skills: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     country: Mapped[str | None] = mapped_column(Text)
@@ -36,6 +38,6 @@ class Preferences(TimestampMixin, Base):
     # Daily fetcher time as "HH:MM" in fetch_timezone (an IANA name); fetching needs both.
     fetch_time: Mapped[str | None] = mapped_column(Text)
     fetch_timezone: Mapped[str | None] = mapped_column(Text)
-    # Used only by the apply process to fill in application forms; never passed to the resume or
-    # cover letter writers.
+    # The user's long-form resume plus application facts; for the apply process and the cover
+    # letter and resume writers.
     additional_information: Mapped[str | None] = mapped_column(Text)

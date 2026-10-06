@@ -21,6 +21,7 @@ vi.mock("@/lib/profile/timezones", async (importOriginal) => ({
 
 const EMPTY_PREFERENCES: Preferences = {
   desired_titles: [],
+  excluded_title_words: [],
   hard_skills: [],
   soft_skills: [],
   country: null,
@@ -115,6 +116,10 @@ describe("ProfileForm", () => {
     ).toEqual(["Choose the daily time (and time zone) to fetch new jobs."]);
     await dismissSetup(user);
     await user.type(screen.getByLabelText("Hard skills"), "Python{Enter}");
+    await user.type(
+      screen.getByLabelText("Excluded title words"),
+      "QA, Site Reliability{Enter}",
+    );
     await user.type(screen.getByLabelText("Minimum yearly salary"), "120000");
     expect(
       screen.getByRole("combobox", { name: "Time zone" }),
@@ -140,6 +145,7 @@ describe("ProfileForm", () => {
     expect(put?.[1]).toMatchObject({ credentials: "include" });
     expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
       desired_titles: ["Backend Engineer"],
+      excluded_title_words: ["QA", "Site Reliability"],
       hard_skills: ["Python"],
       country: "US",
       currency: "USD",

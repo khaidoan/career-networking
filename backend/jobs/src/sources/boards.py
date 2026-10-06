@@ -83,7 +83,7 @@ def _keep(
     now: datetime,
     allow_bare_remote: bool,
 ) -> bool:
-    if not title_matches(posting.title, criteria.desired_titles):
+    if not title_matches(posting.title, criteria.desired_titles, criteria.excluded_title_words):
         return False
     if not seniority_matches(posting.title, criteria.seniority):
         return False

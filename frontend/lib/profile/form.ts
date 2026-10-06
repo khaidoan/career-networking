@@ -33,6 +33,7 @@ export const DEFAULT_FETCH_TIME = "06:00";
 const FETCH_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export type ProfileFormValues = Record<TagField, string[]> & {
+  excludedTitleWords: string[];
   country: string;
   currency: string;
   salaryMin: string;
@@ -145,6 +146,7 @@ export function toFormValues(preferences: Preferences): ProfileFormValues {
   ) as Record<EeoQuestionKey, string>;
   return {
     desired_titles: preferences.desired_titles ?? [],
+    excludedTitleWords: preferences.excluded_title_words ?? [],
     hard_skills: preferences.hard_skills ?? [],
     soft_skills: preferences.soft_skills ?? [],
     country: preferences.country ?? "",
@@ -209,6 +211,7 @@ export function toUpdate(values: ProfileFormValues): PreferencesUpdate {
   );
   return {
     desired_titles: values.desired_titles,
+    excluded_title_words: values.excludedTitleWords,
     hard_skills: values.hard_skills,
     soft_skills: values.soft_skills,
     country: values.country || null,

@@ -1,13 +1,48 @@
-"""The free pre-LLM filters: seniority from titles and bare-"Remote" postings."""
+"""The free pre-LLM filters: titles, seniority from titles and bare-"Remote" postings."""
 
 import pytest
 
+from src.models import Preferences
 from src.sources.filters import (
+    SearchCriteria,
     bare_remote_allowed,
     location_matches,
     seniority_matches,
+    title_matches,
     title_seniority_levels,
 )
+
+DESIRED = ("Software Engineer", "AI Engineer")
+EXCLUDED = ("Test", "QA", "Security", "Site Reliability")
+
+
+@pytest.mark.parametrize(
+    ("title", "kept"),
+    [
+        ("Senior Software Engineer, Payments", True),
+        ("Lead Engineer - AI Payments App", True),
+        # Every word of an excluded entry, in any order and case: skipped.
+        ("Software Development Engineer in Test (SDET)", False),
+        ("Senior Software Engineer, qa Automation", False),
+        ("Staff Software Security Engineer", False),
+        ("Site Reliability Engineer, AI Observability", False),
+        # Only part of a multi-word entry: kept. Excluded words never add a match.
+        ("Reliability Engineer, AI Platform", True),
+        ("Test Automation Lead", False),
+    ],
+)
+def test_title_matches_skips_titles_with_an_excluded_entry(title: str, kept: bool) -> None:
+    assert title_matches(title, DESIRED, EXCLUDED) is kept
+
+
+def test_search_criteria_carry_the_excluded_title_words() -> None:
+    preferences = Preferences(
+        desired_titles=["Backend Engineer"], country="US", excluded_title_words=["QA", "  "]
+    )
+
+    criteria = SearchCriteria.from_preferences(preferences)
+
+    assert criteria is not None and criteria.excluded_title_words == ("QA",)
 
 
 @pytest.mark.parametrize(

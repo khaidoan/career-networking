@@ -51,6 +51,7 @@ type SaveStatus =
 
 /** Form keys whose API (and error) name differs. */
 const FORM_TO_API_FIELD: Record<string, string> = {
+  excludedTitleWords: "excluded_title_words",
   salaryMin: "salary_min",
   salaryMax: "salary_max",
   fetchTime: "fetch_time",

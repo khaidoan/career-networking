@@ -2,6 +2,7 @@
 
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -146,6 +147,21 @@ def test_board_scan_keeps_matching_postings_and_drops_wrong_country_undated_and_
     # Kept: Austin, Texas (US state name) and a plain "Remote" posting with no other country.
     # Dropped: London, UK (wrong country), undated, published 55 days ago, and a designer role.
     assert [posting.url.rsplit("/", 1)[1] for posting in scan.matches] == ["101", "106"]
+
+
+def test_board_scan_drops_titles_with_an_excluded_word(fake_http: FakeHttp) -> None:
+    fake_http.add(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        json=fixture_json("ats/greenhouse.json"),
+    )
+    board = get_provider("greenhouse").board_ref("acme")
+    criteria = replace(BACKEND_US, excluded_title_words=("Remote",))
+
+    with fake_http.client() as client:
+        scan = scan_board(board, criteria, client, NOW)
+
+    # Job 106, "Backend Engineer (Remote)", is skipped; job 101 is still kept.
+    assert [posting.url.rsplit("/", 1)[1] for posting in scan.matches] == ["101"]
 
 
 @pytest.mark.parametrize(

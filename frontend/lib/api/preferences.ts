@@ -48,6 +48,8 @@ export type EeoAnswers = Partial<Record<EeoQuestionKey, string | null>>;
 /** Every editable preference; `PUT` replaces all of them at once. */
 export type PreferencesUpdate = {
   desired_titles: string[];
+  /** Titles containing every word of one of these are skipped by the job fetcher. */
+  excluded_title_words: string[];
   hard_skills: string[];
   soft_skills: string[];
   country: string | null;
@@ -59,8 +61,8 @@ export type PreferencesUpdate = {
   gender: string | null;
   eeo_answers: EeoAnswers;
   /**
-   * Free text from the "Other" section, used only when filling in application forms; never for
-   * writing the resume or cover letter.
+   * Free text from the "Other" section: a long-form resume plus application facts, used to fill
+   * in application forms and to write the resume and cover letter.
    */
   additional_information: string | null;
   /** Whether jobs may be applied to automatically; off by default. */

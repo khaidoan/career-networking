@@ -11,6 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const COMPLETE: Preferences = {
   desired_titles: ["Backend Engineer"],
+  excluded_title_words: [],
   hard_skills: [],
   soft_skills: [],
   country: "US",

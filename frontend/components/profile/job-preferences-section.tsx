@@ -12,7 +12,7 @@ import { SENIORITY_OPTIONS } from "@/lib/profile/options";
 
 type JobPreferencesSectionProps = SectionProps & { suggested: SuggestedTags };
 
-/** Desired titles, hard and soft skills, and the seniority levels to look for. */
+/** Desired and excluded titles, hard and soft skills, and the seniority levels to look for. */
 export function JobPreferencesSection({
   values,
   errors,
@@ -44,11 +44,19 @@ export function JobPreferencesSection({
       <TagInput
         id="desired-titles"
         label="Desired job titles"
-        description="For example: Backend Engineer. Jobs must contain every word of a title."
+        description="Be specific, for example: Backend Software Engineer. Jobs must contain every word of a title, so a broad title such as Software Engineer brings in many unrelated jobs."
         values={values.desired_titles}
         onChange={(desired_titles) => onChange({ desired_titles })}
         suggested={suggested.desired_titles}
         error={errors.desired_titles}
+      />
+      <TagInput
+        id="excluded-title-words"
+        label="Excluded title words"
+        description="Jobs whose title contains any of these are skipped before they are scored, for example: Test, QA, Security. A phrase such as Site Reliability is skipped only when all its words appear."
+        values={values.excludedTitleWords}
+        onChange={(excludedTitleWords) => onChange({ excludedTitleWords })}
+        error={errors.excluded_title_words}
       />
       <TagInput
         id="hard-skills"
