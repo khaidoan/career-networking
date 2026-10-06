@@ -27,7 +27,12 @@ def base_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pytest.MonkeyPa
     for name, value in values.items():
         monkeypatch.setenv(ENV_PREFIX + name, value)
     monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
-    for name in ("LLM_API_BASE", "MATCH_THRESHOLD", "GOOGLE_JOBS_INTERVAL_HOURS"):
+    for name in (
+        "LLM_API_BASE",
+        "LLM_MODEL_OVERRIDES",
+        "MATCH_THRESHOLD",
+        "GOOGLE_JOBS_INTERVAL_HOURS",
+    ):
         monkeypatch.delenv(ENV_PREFIX + name, raising=False)
     return monkeypatch
 
@@ -76,3 +81,48 @@ def test_blank_serpapi_key_means_google_jobs_is_disabled(base_env: pytest.Monkey
     settings: Settings = load_settings()
 
     assert settings.serpapi_api_key is None
+
+
+def test_model_overrides_pick_the_model_per_agent(base_env: pytest.MonkeyPatch) -> None:
+    base_env.setenv(
+        "CAREER_NETWORKING_LLM_MODEL_OVERRIDES",
+        " evaluator = anthropic/claude-haiku-4-5 ,, networking=ollama/llama3.1 ",
+    )
+
+    settings = load_settings()
+
+    assert settings.llm_model_for("evaluator") == "anthropic/claude-haiku-4-5"
+    assert settings.llm_model_for("networking") == "ollama/llama3.1"
+    assert settings.llm_model_for("company_lookup") == "openai/gpt-4o-mini"
+
+
+def test_blank_model_overrides_mean_every_agent_uses_the_default(
+    base_env: pytest.MonkeyPatch,
+) -> None:
+    base_env.setenv("CAREER_NETWORKING_LLM_MODEL_OVERRIDES", "")
+
+    assert load_settings().llm_model_overrides == {}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "evaluater=anthropic/claude-haiku-4-5",
+        "evaluator",
+        "evaluator=",
+        "evaluator=a/b,evaluator=c/d",
+    ],
+)
+def test_malformed_model_overrides_fail_fast(base_env: pytest.MonkeyPatch, value: str) -> None:
+    base_env.setenv("CAREER_NETWORKING_LLM_MODEL_OVERRIDES", value)
+
+    with pytest.raises(SettingsError, match="CAREER_NETWORKING_LLM_MODEL_OVERRIDES"):
+        load_settings()
+
+
+def test_every_agent_name_can_be_overridden() -> None:
+    from src.agents import company_lookup, evaluator, networking, resume_extractor
+    from src.config import LLM_AGENT_NAMES
+
+    agents = (company_lookup, evaluator, networking, resume_extractor)
+    assert sorted(agent.AGENT_NAME for agent in agents) == sorted(LLM_AGENT_NAMES)

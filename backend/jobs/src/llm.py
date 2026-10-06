@@ -81,15 +81,17 @@ def complete(messages: list[Message], *, agent_name: str, settings: Settings | N
     out of attempts, raises ``LlmError``.
     """
     settings = settings or get_settings()
+    model = settings.llm_model_for(agent_name)
     request: dict[str, Any] = {
-        "model": settings.llm_model,
+        "model": model,
         "messages": messages,
         "timeout": REQUEST_TIMEOUT_SECONDS,
         "response_format": {"type": "json_object"},
         # Providers that do not support a parameter (e.g. response_format) silently ignore it.
         "drop_params": True,
     }
-    if settings.llm_api_base:
+    # The custom API base belongs to the default model; an override may use another provider.
+    if settings.llm_api_base and agent_name not in settings.llm_model_overrides:
         request["api_base"] = settings.llm_api_base
 
     for attempt in range(1, MAX_TRANSIENT_ATTEMPTS + 1):
@@ -102,7 +104,7 @@ def complete(messages: list[Message], *, agent_name: str, settings: Settings | N
             logger.warning(
                 "LLM call agent=%s model=%s latency_ms=%d outcome=error attempt=%d error=%s",
                 agent_name,
-                settings.llm_model,
+                model,
                 latency_ms,
                 attempt,
                 type(error).__name__,
@@ -116,7 +118,7 @@ def complete(messages: list[Message], *, agent_name: str, settings: Settings | N
         logger.info(
             "LLM call agent=%s model=%s latency_ms=%d outcome=ok",
             agent_name,
-            settings.llm_model,
+            model,
             latency_ms,
         )
         return response.choices[0].message.content or ""

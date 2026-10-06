@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel
 
+from src.config import Settings
 from src.llm import LlmOutputError, complete_structured, resolve_system_prompt
 from src.models import Prompt
 from tests.conftest import FakeLlm
@@ -53,3 +54,24 @@ def test_prompt_resolution_prefers_customized_row(stored: Prompt | None, expecte
     session.scalar.return_value = stored
 
     assert resolve_system_prompt(session, "evaluator", "Default prompt") == expected
+
+
+def test_overridden_agent_uses_its_model_without_the_default_api_base(
+    fake_llm: FakeLlm, test_settings: Settings
+) -> None:
+    settings = test_settings.model_copy(
+        update={
+            "llm_api_base": "http://ollama.invalid:11434",
+            "llm_model_overrides": {"evaluator": "anthropic/claude-haiku-4-5"},
+        }
+    )
+    fake_llm.replies = ['{"value": 1}', '{"value": 2}']
+
+    complete_structured("You answer.", "Q?", Answer, agent_name="evaluator", settings=settings)
+    complete_structured("You answer.", "Q?", Answer, agent_name="networking", settings=settings)
+
+    overridden, default = fake_llm.requests
+    assert overridden["model"] == "anthropic/claude-haiku-4-5"
+    assert "api_base" not in overridden
+    assert default["model"] == "openai/test-model"
+    assert default["api_base"] == "http://ollama.invalid:11434"

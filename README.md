@@ -38,19 +38,20 @@ Then edit `.env` and replace every placeholder. `.env` at the repo root is the o
   python3 -c "import secrets; print(secrets.token_hex(32))"
   ```
 
-- `CAREER_NETWORKING_LLM_MODEL` picks the AI model used by every agent (see [LLM configuration](#llm-configuration)). It is required: **if you created `.env` before Phase 2, add it (and the matching provider key) now**, or the jobs and fetcher services will not start.
+- `CAREER_NETWORKING_LLM_MODEL` picks the default AI model for every agent (see [LLM configuration](#llm-configuration)). It is required: **if you created `.env` before Phase 2, add it (and the matching provider key) now**, or the jobs and fetcher services will not start.
 
 The jobs service refuses to start, naming the offending variables, if a required value is missing or invalid.
 
 ### LLM configuration
 
-All AI agents (resume extractor, job evaluator, company lookup, networking) share one model, called through [LiteLLM](https://docs.litellm.ai/docs/providers). Set it in `.env`:
+All AI agents (`resume_extractor`, `evaluator`, `company_lookup`, `networking`) use one default model, called through [LiteLLM](https://docs.litellm.ai/docs/providers); any of them can be given a different model. Set them in `.env`:
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `CAREER_NETWORKING_LLM_MODEL` | yes | LiteLLM model string, `<provider>/<model>` |
-| `CAREER_NETWORKING_LLM_API_BASE` | no | Custom API base URL (e.g. a local Ollama server); leave empty for the provider default |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` | for that provider | Set only the key that matches the model. LiteLLM reads it from the environment; it is never logged |
+| `CAREER_NETWORKING_LLM_MODEL` | yes | Default LiteLLM model string, `<provider>/<model>` |
+| `CAREER_NETWORKING_LLM_API_BASE` | no | Custom API base URL for the default model (e.g. a local Ollama server); leave empty for the provider default. Overridden agents do not use it |
+| `CAREER_NETWORKING_LLM_MODEL_OVERRIDES` | no | Comma-separated `agent=model` pairs for agents that should not use the default, e.g. `company_lookup=anthropic/claude-sonnet-5`. An unknown agent name or malformed pair stops the service from starting |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` | for that provider | Set the keys that match the models in use. LiteLLM reads them from the environment; they are never logged |
 | `CAREER_NETWORKING_MATCH_THRESHOLD` | no (default 70) | Jobs whose overall match score (0–100) is at least this go to the Recommended inbox; the rest go to Ignored |
 
 Examples:
@@ -60,8 +61,9 @@ Examples:
 CAREER_NETWORKING_LLM_MODEL=openai/gpt-4o-mini
 OPENAI_API_KEY=sk-...
 
-# Anthropic
-CAREER_NETWORKING_LLM_MODEL=anthropic/claude-sonnet-4-5
+# Anthropic: Haiku for every agent except company lookup
+CAREER_NETWORKING_LLM_MODEL=anthropic/claude-haiku-4-5
+CAREER_NETWORKING_LLM_MODEL_OVERRIDES=company_lookup=anthropic/claude-sonnet-5
 ANTHROPIC_API_KEY=sk-ant-...
 
 # OpenRouter
