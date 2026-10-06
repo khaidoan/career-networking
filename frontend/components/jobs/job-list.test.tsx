@@ -58,9 +58,11 @@ const JOB: JobCard = {
   compensation_range: null,
   visa_sponsorship: null,
   overall_score: 72,
+  score_explanation: null,
   evaluation_error: null,
   inbox_type: "recommended",
   liked: true,
+  posted_at: null,
   discovered_when: "2026-09-24T10:00:00Z",
   applied_when: null,
 };

@@ -1,11 +1,13 @@
 """Company lookup: fills a ``companies`` row from the model's own knowledge (no browsing).
 
-The scorer only calls it for companies with a recommended job, so no tokens are spent on
-companies whose jobs all go to the Ignored inbox. It also returns the company's official name,
+The scorer calls it for companies with a recommended job, and Company Details asks for it (once)
+when the user opens a company that has no profile, so no tokens are spent on other companies
+whose jobs all go to the Ignored inbox. It also returns the company's official name,
 which replaces a name taken from a job board's slug ("capitalone" -> "Capital One").
 """
 
 import re
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, field_validator
@@ -126,4 +128,10 @@ def enrich_company(session: Session, company: Company, description: str | None =
         if getattr(company, field) is None and value is not None:
             setattr(company, field, value)
     _apply_official_name(company, lookup)
+    company.profile_looked_up_at = datetime.now(UTC)
     session.flush()
+
+
+def needs_profile_lookup(company: Company) -> bool:
+    """True for a name-only company the lookup agent has not tried yet."""
+    return company.profile_looked_up_at is None and is_name_only(company)

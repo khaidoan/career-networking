@@ -13,6 +13,7 @@ from src.sources.boards import BoardScan, scan_board
 from src.sources.filters import SearchCriteria, location_matches
 from src.sources.providers import PROVIDERS, detect_board, get_provider
 from src.sources.providers.base import BoardRef, HttpClient, Posting, company_for
+from src.sources.providers.workday import strip_entity_code
 from src.sources.state import FileFetcherState
 from src.vocabularies import ATS_PROVIDERS
 from tests.conftest import FakeHttp, fixture_json, fixture_text
@@ -351,3 +352,26 @@ def test_scan_board_saves_matches_under_the_board_s_company_name(
     # The name is kept on the board, so a tracked board is not asked again.
     assert scan.board.company_name == (board_name or (found if isinstance(found, str) else None))
     assert provider.asked == (0 if board_name else 1)
+
+
+@pytest.mark.parametrize(
+    ("reported", "expected"),
+    [
+        ("003 Humana Inc.", "Humana Inc."),
+        ("06F Federal Reserve Bank of Atlanta", "Federal Reserve Bank of Atlanta"),
+        (
+            "22-2640844 BR Securities Processing Solutions Inc",
+            "BR Securities Processing Solutions Inc",
+        ),
+        ("1 Vizient, Inc.", "Vizient, Inc."),
+        ("3M Company", "3M Company"),
+        ("8th Light", "8th Light"),
+        ("2K", "2K"),
+        ("Acme", "Acme"),
+        (None, None),
+    ],
+)
+def test_workday_strips_a_legal_entity_code_from_the_hiring_organization(
+    reported: str | None, expected: str | None
+) -> None:
+    assert strip_entity_code(reported) == expected

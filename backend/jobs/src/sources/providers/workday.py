@@ -38,6 +38,15 @@ CAREERS_URL = re.compile(
 PART = re.compile(r"^[A-Za-z0-9._-]+$")
 POSTED_DAYS_AGO = re.compile(r"posted\s+(\d+)(\+?)\s*day", re.IGNORECASE)
 MULTI_LOCATION_PLACEHOLDER = re.compile(r"^\s*\d+\s+locations?\s*$", re.IGNORECASE)
+# The legal-entity code some tenants put before the hiring organization's name: "003 Humana
+# Inc.", "06F Federal Reserve Bank of Atlanta", "22-2640844 BR Securities ...". A name such as
+# "3M Company" or "8th Light" does not match (no leading zero before the letter).
+ENTITY_CODE_PREFIX = re.compile(r"^(?:\d+|0\d*[A-Z]|\d{2}-\d{7})\s+(?=\S)")
+
+
+def strip_entity_code(name: object) -> object:
+    """The hiring organization's name without a leading legal-entity code."""
+    return ENTITY_CODE_PREFIX.sub("", name.strip()) if isinstance(name, str) else name
 
 
 class WorkdayProvider(AtsProvider):
@@ -128,7 +137,9 @@ class WorkdayProvider(AtsProvider):
             posting.extra.pop("location_pending", None)
         organization = detail.get("hiringOrganization")
         if isinstance(organization, dict) and posting.board and not posting.board.company_name:
-            posting.company = company_for(posting.board, organization.get("name"))
+            posting.company = company_for(
+                posting.board, strip_entity_code(organization.get("name"))
+            )
 
     def fetch_description(self, url: str, client: HttpClient) -> str | None:
         detail = self._detail(url, client)

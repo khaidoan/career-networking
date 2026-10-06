@@ -54,6 +54,9 @@ Scores are whole numbers from 0 (no fit) to 100 (perfect fit):
   location and country, work authorization and sponsorship needs, and salary expectations.
   A job the candidate clearly cannot take (for example it needs sponsorship the company does
   not offer) must score low.
+- score_explanation: two to four plain sentences, addressed to the candidate as "you", on why
+  the job got this overall score. Name the main gaps or mismatches first (for example missing
+  skills, too few years, wrong seniority, location or sponsorship), then any strengths.
 
 Extract from the posting only; do not use the candidate's data for these fields:
 - compensation_range: the pay range as written (for example "$150,000 - $180,000 per year").
@@ -75,6 +78,9 @@ class JobEvaluation(BaseModel):
     experience_score: Score
     skill_score: Score
     industry_exp_score: Score
+    score_explanation: str | None = Field(
+        default=None, description="Why the job got this overall score, in plain sentences."
+    )
     compensation_range: str | None = None
     work_arrangement: str | None = None
     job_type_classification: str | None = None
@@ -101,7 +107,12 @@ class JobEvaluation(BaseModel):
         return slug_or_none(value, SENIORITY_LEVELS)
 
     @field_validator(
-        "compensation_range", "location_city", "location_state", "location_country", mode="before"
+        "score_explanation",
+        "compensation_range",
+        "location_city",
+        "location_state",
+        "location_country",
+        mode="before",
     )
     @classmethod
     def _blank_is_null(cls, value: object) -> object:

@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Banknote,
   Briefcase,
+  CalendarClock,
   Clock,
   Factory,
   Laptop,
@@ -20,10 +21,16 @@ import {
   NotScoredBadge,
   VisaIndicator,
 } from "@/components/jobs/match-indicators";
+import { ScoreExplanationDialog } from "@/components/jobs/score-explanation-dialog";
 import { Card } from "@/components/ui/card";
 import { useOptimisticLike } from "@/hooks/use-optimistic-like";
 import { setJobLiked, type JobCard as JobCardData } from "@/lib/api/jobs";
-import { formatLocation, formatYearsExperience } from "@/lib/jobs/format";
+import {
+  formatDate,
+  formatDaysAgo,
+  formatLocation,
+  formatYearsExperience,
+} from "@/lib/jobs/format";
 import {
   JOB_TYPE_OPTIONS,
   optionLabel,
@@ -84,9 +91,28 @@ function jobDetails(job: JobCardData): Detail[] {
   ];
 }
 
+/** "Posted 2 days ago" from the source's date, else "Found 2 days ago" from discovery. */
+function PostedWhen({ job }: { job: JobCardData }) {
+  const iso = job.posted_at ?? job.discovered_when;
+  const ago = formatDaysAgo(iso);
+  if (!ago) {
+    return null;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+      <CalendarClock aria-hidden="true" className="size-4 shrink-0" />
+      {job.posted_at ? "Posted" : "Found"}{" "}
+      <time dateTime={iso} title={formatDate(iso) ?? undefined}>
+        {ago}
+      </time>
+    </span>
+  );
+}
+
 /**
  * One job in an inbox list (render inside a `ul`). The whole card opens Job Details through the
- * title link; the like button sits above that link. Unknown values are hidden.
+ * title link; the like button sits above that link. Unknown values are hidden. Scored jobs in
+ * Ignored also get "View Explanation", shown on hover or keyboard focus (always on touch screens).
  */
 export function JobCard({
   job,
@@ -113,11 +139,16 @@ export function JobCard({
     ...jobDetails(job),
   ].filter((detail) => detail.value);
   const Heading = compact ? "h3" : "h2";
+  const explainable =
+    job.inbox_type === "ignored" && job.overall_score !== null;
 
   return (
     <li>
       <Card
-        className={cn("relative gap-4 px-4 py-4 md:px-6 md:py-5", className)}
+        className={cn(
+          "group relative gap-4 px-4 py-4 md:px-6 md:py-5",
+          className,
+        )}
       >
         <div className="flex items-start gap-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -152,6 +183,13 @@ export function JobCard({
             )
           )}
           <VisaIndicator sponsorship={job.visa_sponsorship} />
+          <PostedWhen job={job} />
+          {explainable && (
+            <ScoreExplanationDialog
+              job={job}
+              className="relative z-10 ml-auto transition-opacity group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+            />
+          )}
         </div>
 
         {details.length > 0 && (

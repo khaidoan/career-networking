@@ -32,6 +32,8 @@ export type Company = CompanyCard & {
 
 /** Company Details: the company, its jobs (newest first), its contacts and search status. */
 export type CompanyDetail = Company & {
+  /** No profile and never looked up: the page asks for `lookUpCompany` once. */
+  needs_profile_lookup: boolean;
   job_count: number;
   jobs: JobCard[];
   contacts: Contact[];
@@ -113,6 +115,22 @@ export async function getCompany(
 ): Promise<CompanyResult> {
   return companyResult(
     await requestJson<CompanyDetail>(`${COMPANIES_API}/${companyId}`, {
+      signal,
+    }),
+  );
+}
+
+/**
+ * Fill a name-only company's profile from the AI model's own knowledge. Runs once per company on
+ * the server; afterwards it just returns the company. A model failure is a 502 `ApiFailure`.
+ */
+export async function lookUpCompany(
+  companyId: number,
+  signal?: AbortSignal,
+): Promise<CompanyResult> {
+  return companyResult(
+    await requestJson<CompanyDetail>(`${COMPANIES_API}/${companyId}/lookup`, {
+      method: "POST",
       signal,
     }),
   );

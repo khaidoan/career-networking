@@ -10,6 +10,7 @@ from sqlalchemy import Row, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from src.agents.company_lookup import enrich_company, needs_profile_lookup
 from src.agents.networking import find_contacts
 from src.api.v1.common import (
     PAGE_SIZE,
@@ -56,6 +57,7 @@ NO_SERPAPI_KEY = "Contact search needs a SerpApi key. See the README."
 NOT_ELIGIBLE = "Contact search is only available for companies with a recommended or applied job."
 SEARCH_FAILED = "Contact search failed: the search service could not be reached. Try again later."
 SELECTION_FAILED = "Contact search failed: the AI model could not be reached. Try again later."
+LOOKUP_FAILED = "Company lookup failed: the AI model could not be reached. Try again later."
 PREFERENCES_ROW_ID = 1
 MAX_SEARCH_LENGTH = 200
 MAX_INDUSTRY_FILTERS = 50
@@ -151,6 +153,7 @@ def _to_detail(
     contacts = sorted(company.networking_contacts, key=lambda contact: contact.id)
     return CompanyDetail(
         **CompanyRead.from_model(company).model_dump(),
+        needs_profile_lookup=needs_profile_lookup(company),
         job_count=job_count,
         jobs=[JobCard.from_model(job, company) for job in jobs],
         contacts=[ContactRead.from_model(contact) for contact in contacts],
@@ -167,6 +170,31 @@ def get_company(company_id: int, session: DbSession, settings: AppSettings) -> C
     """The company with its jobs (newest first), its contacts, contact search status and
     ``job_count``."""
     return _detail(session, settings, company_id)
+
+
+@router.post("/{company_id}/lookup")
+def look_up_company(company_id: int, session: DbSession, settings: AppSettings) -> CompanyDetail:
+    """Fill a name-only company's profile from the company lookup agent, once.
+
+    Company Details calls it when ``needs_profile_lookup`` is true. It runs at most once per
+    company (even when the model does not know it); otherwise it just returns the company. The
+    newest job's description, when there is one, helps the model tell which company is meant.
+    A failed LLM call is a 502 and writes nothing, so the next visit tries again.
+    """
+    company, job_count = _load_company(session, company_id)
+    if needs_profile_lookup(company):
+        newest = max(company.jobs, key=lambda job: (job.discovered_when, job.id), default=None)
+        try:
+            enrich_company(session, company, newest.description if newest else None)
+        except LlmError as error:
+            session.rollback()
+            logger.warning(
+                "Company lookup company=%d failed: LLM error: %s", company_id, type(error).__name__
+            )
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, LOOKUP_FAILED) from None
+        session.commit()
+        logger.info("Company lookup company=%d done", company_id)
+    return _to_detail(session, settings, company, job_count)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

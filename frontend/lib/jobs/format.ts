@@ -105,3 +105,35 @@ export function formatRelativeTime(
   }
   return "just now";
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function startOfDay(date: Date): number {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
+}
+
+/**
+ * Calendar days since a past timestamp in local time: "today", "1 day ago", "12 days ago";
+ * `null` for a missing or unparseable timestamp. Future times (clock skew) read as "today".
+ */
+export function formatDaysAgo(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!iso) {
+    return null;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+  if (days <= 0) {
+    return "today";
+  }
+  return `${days} ${days === 1 ? "day" : "days"} ago`;
+}

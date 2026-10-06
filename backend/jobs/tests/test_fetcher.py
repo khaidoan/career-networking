@@ -201,6 +201,8 @@ def test_run_dedups_urls_and_matches_companies_then_the_scorer_routes_jobs_by_sc
         "Backend Engineer II",
         "Senior Backend Engineer",
     ]
+    # The source's published time is kept for the job card's "Posted N days ago".
+    assert all(job.posted_at is not None for job in pending)
     assert sources.evaluated == [] and sources.enriched == []
     assert summary.queued == 2
 

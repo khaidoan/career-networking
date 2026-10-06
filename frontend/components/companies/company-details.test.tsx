@@ -23,6 +23,7 @@ const COMPANY: CompanyDetail = {
   linkedin_url: "https://www.linkedin.com/company/acme/",
   description: "Payments for small businesses.",
   history: null,
+  needs_profile_lookup: false,
   job_count: 0,
   jobs: [],
   contacts: [],
@@ -188,5 +189,35 @@ describe("CompanyDetails", () => {
     expect(
       screen.getByRole("link", { name: "Back to Companies" }),
     ).toHaveAttribute("href", "/companies");
+  });
+
+  it("looks up a company with no profile once and shows what was found", async () => {
+    const nameOnly: CompanyDetail = {
+      ...COMPANY,
+      industries: [],
+      growth_stage: null,
+      employee_estimate: null,
+      website_url: null,
+      linkedin_url: null,
+      description: null,
+      needs_profile_lookup: true,
+    };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+      json(
+        init?.method === "POST" && url.endsWith("/lookup")
+          ? { ...COMPANY, needs_profile_lookup: false }
+          : nameOnly,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderDetails();
+
+    expect(
+      await screen.findByText("Payments for small businesses."),
+    ).toBeInTheDocument();
+    const lookups = fetchMock.mock.calls.filter(([url]) =>
+      String(url).endsWith("/api/v1/companies/3/lookup"),
+    );
+    expect(lookups).toHaveLength(1);
   });
 });

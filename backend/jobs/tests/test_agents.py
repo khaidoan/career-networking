@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.agents.company_lookup import enrich_company, is_name_only
+from src.agents.company_lookup import enrich_company, is_name_only, needs_profile_lookup
 from src.agents.evaluator import JobForEvaluation, evaluate_job
 from src.agents.resume_extractor import extract_resume_suggestions, strip_seniority
 from src.models import Company, Preferences
@@ -59,6 +59,19 @@ def test_evaluator_returns_validated_evaluation_with_vocabulary_slugs(
     assert evaluation.seniority_level is None
     assert evaluation.location_country == "US"
     assert evaluation.visa_sponsorship is None
+    assert evaluation.score_explanation is None
+
+
+@pytest.mark.parametrize(
+    ("explanation", "expected"),
+    [("  You lack Go experience.  ", "You lack Go experience."), ("   ", None)],
+)
+def test_evaluator_keeps_a_trimmed_score_explanation(
+    fake_llm: FakeLlm, session: MagicMock, explanation: str, expected: str | None
+) -> None:
+    fake_llm.replies = [_evaluation(score_explanation=explanation)]
+
+    assert evaluate_job(session, JOB, None).score_explanation == expected
 
 
 def test_evaluator_context_excludes_address_gender_and_other_eeo_answers(
@@ -151,6 +164,20 @@ def test_company_lookup_replaces_only_a_slug_name_with_the_official_name(
     enrich_company(session, company)
 
     assert company.name == expected
+
+
+def test_company_lookup_is_needed_once_even_when_the_model_knows_nothing(
+    fake_llm: FakeLlm, session: MagicMock
+) -> None:
+    fake_llm.replies = [json.dumps({"official_name": None})]
+    company = Company(name="Tiny Startup")
+    assert needs_profile_lookup(company)
+
+    enrich_company(session, company)
+
+    assert is_name_only(company)
+    assert company.profile_looked_up_at is not None
+    assert not needs_profile_lookup(company)
 
 
 def test_resume_extractor_trims_and_deduplicates_suggestions(

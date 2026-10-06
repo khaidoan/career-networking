@@ -55,6 +55,8 @@ class Job(TimestampMixin, Base):
     experience_score: Mapped[int | None] = mapped_column(Integer)
     skill_score: Mapped[int | None] = mapped_column(Integer)
     industry_exp_score: Mapped[int | None] = mapped_column(Integer)
+    # The evaluator's reason for the overall score; null when it gave none or scoring failed.
+    score_explanation: Mapped[str | None] = mapped_column(Text)
     # Why the evaluator failed; null for jobs that were scored.
     evaluation_error: Mapped[str | None] = mapped_column(Text)
 
@@ -75,6 +77,8 @@ class Job(TimestampMixin, Base):
     )
     # The posting's location as the source gave it, for the scorer's evaluation.
     posting_location: Mapped[str | None] = mapped_column(Text)
+    # When the source says the posting was published or last updated; null when it does not say.
+    posted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     # Failed scoring attempts, and when the scorer may try this pending job again.
     scoring_attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")

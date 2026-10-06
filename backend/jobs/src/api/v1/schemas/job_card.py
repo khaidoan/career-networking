@@ -28,9 +28,11 @@ class JobCard(BaseModel):
     compensation_range: str | None
     visa_sponsorship: bool | None
     overall_score: int | None
+    score_explanation: str | None
     evaluation_error: str | None
     inbox_type: str
     liked: bool
+    posted_at: datetime | None
     discovered_when: datetime
     applied_when: datetime | None
 
@@ -53,9 +55,11 @@ class JobCard(BaseModel):
             "compensation_range": job.compensation_range,
             "visa_sponsorship": job.visa_sponsorship,
             "overall_score": job.overall_score,
+            "score_explanation": job.score_explanation,
             "evaluation_error": job.evaluation_error,
             "inbox_type": job.inbox_type,
             "liked": job.liked,
+            "posted_at": job.posted_at,
             "discovered_when": job.discovered_when,
             "applied_when": job.applied_when,
         }

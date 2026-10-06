@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -24,9 +24,11 @@ const JOB: JobCardData = {
   compensation_range: null,
   visa_sponsorship: true,
   overall_score: 86,
+  score_explanation: null,
   evaluation_error: null,
   inbox_type: "recommended",
   liked: false,
+  posted_at: null,
   discovered_when: "2026-09-24T10:00:00Z",
   applied_when: null,
 };
@@ -119,5 +121,52 @@ describe("JobCard", () => {
     expect(document.querySelector('[aria-live="assertive"]')).toHaveTextContent(
       "Could not like Backend Engineer. Something went wrong. Please try again.",
     );
+  });
+
+  it("shows when the job was posted, falling back to when it was found", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 8, 26, 12));
+    try {
+      expect(
+        renderCard({
+          ...JOB,
+          posted_at: new Date(2026, 8, 24, 9).toISOString(),
+        }).getByText(/Posted/),
+      ).toHaveTextContent("Posted 2 days ago");
+      cleanup();
+      expect(
+        renderCard({
+          ...JOB,
+          discovered_when: new Date(2026, 8, 26, 8).toISOString(),
+        }).getByText(/Found/),
+      ).toHaveTextContent("Found today");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens the score explanation from a scored job in Ignored only", async () => {
+    const user = userEvent.setup();
+    const card = renderCard({
+      ...JOB,
+      inbox_type: "ignored",
+      overall_score: 42,
+      score_explanation: "You lack the required Go experience.",
+    });
+
+    await user.click(card.getByRole("button", { name: /View Explanation/ }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Why this job scored low",
+    });
+    expect(dialog).toHaveTextContent("You lack the required Go experience.");
+    expect(dialog).toHaveTextContent("Weak");
+  });
+
+  it("has no explanation button outside Ignored", () => {
+    const card = renderCard(JOB);
+    expect(
+      card.queryByRole("button", { name: /View Explanation/ }),
+    ).not.toBeInTheDocument();
   });
 });

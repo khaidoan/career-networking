@@ -38,6 +38,8 @@ class Company(TimestampMixin, Base):
     employee_estimate: Mapped[str | None] = mapped_column(Text)
     # Last successful contact search (display only; there is no cooldown).
     contacts_searched_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    # Last company lookup, even one that found nothing; Company Details then does not ask again.
+    profile_looked_up_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
     # Jobs block company deletion (ON DELETE RESTRICT); let the database enforce it.
     jobs: Mapped[list["Job"]] = relationship(back_populates="company", passive_deletes="all")

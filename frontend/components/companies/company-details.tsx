@@ -9,6 +9,7 @@ import {
   Building2,
   ExternalLink,
   Globe,
+  LoaderCircle,
   SearchX,
   UsersRound,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { useOptimisticLike } from "@/hooks/use-optimistic-like";
 import {
   getCompany,
+  lookUpCompany,
   setCompanyLiked,
   type CompanyDetail,
 } from "@/lib/api/companies";
@@ -184,9 +186,102 @@ function CompanyHeader({
   );
 }
 
-function AboutSection({ company }: { company: CompanyDetail }) {
+type LookupState =
+  | { status: "idle" }
+  | { status: "looking" }
+  | { status: "failed"; message: string };
+
+function hasProfile(company: CompanyDetail): boolean {
+  return Boolean(
+    company.description?.trim() ||
+    company.history?.trim() ||
+    company.industries.length > 0 ||
+    company.growth_stage ||
+    company.employee_estimate,
+  );
+}
+
+/**
+ * Asks the server to fill a name-only company's profile once, when the page opens; a company
+ * with a profile, or one already looked up, is left alone.
+ */
+function useProfileLookup(
+  company: CompanyDetail,
+  onLookedUp: (company: CompanyDetail) => void,
+): [LookupState, () => void] {
+  // The failure of the current attempt; "looking" is derived, so the effect sets no state up front.
+  const [failure, setFailure] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const { id, needs_profile_lookup: needed } = company;
+
+  useEffect(() => {
+    if (!needed) {
+      return;
+    }
+    const controller = new AbortController();
+    lookUpCompany(id, controller.signal)
+      .then((result) => {
+        if (result.ok) {
+          onLookedUp(result.company);
+        } else {
+          setFailure(result.message);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          throw error;
+        }
+      });
+    return () => controller.abort();
+  }, [id, needed, attempt, onLookedUp]);
+
+  const state: LookupState =
+    failure !== null
+      ? { status: "failed", message: failure }
+      : needed
+        ? { status: "looking" }
+        : { status: "idle" };
+  const retry = () => {
+    setFailure(null);
+    setAttempt((count) => count + 1);
+  };
+  return [state, retry];
+}
+
+function AboutSection({
+  company,
+  onLookedUp,
+}: {
+  company: CompanyDetail;
+  onLookedUp: (company: CompanyDetail) => void;
+}) {
+  const [lookup, retry] = useProfileLookup(company, onLookedUp);
   return (
     <DetailSection id="about" title="About" icon={Building2}>
+      {lookup.status === "looking" && (
+        <p
+          role="status"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+        >
+          <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+          Looking up this company…
+        </p>
+      )}
+      {lookup.status === "failed" && (
+        <div className="flex flex-col items-start gap-2">
+          <p role="alert" className="text-sm text-foreground">
+            {lookup.message}
+          </p>
+          <Button variant="outline" onClick={retry}>
+            Try again
+          </Button>
+        </div>
+      )}
+      {lookup.status === "idle" && !hasProfile(company) && (
+        <p className="text-sm text-muted-foreground">
+          No details are known about this company. Use Edit to add them.
+        </p>
+      )}
       {company.description?.trim() && (
         <p className="text-sm leading-relaxed break-words whitespace-pre-line text-foreground">
           {company.description}
@@ -307,6 +402,29 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
     setState({ status: "ready", company });
   }, []);
 
+  // Only the looked-up fields are taken, so a like saved meanwhile is kept.
+  const applyLookup = useCallback((found: CompanyDetail) => {
+    setState((current) =>
+      current.status === "ready" && current.company.id === found.id
+        ? {
+            status: "ready",
+            company: {
+              ...current.company,
+              name: found.name,
+              website_url: found.website_url,
+              linkedin_url: found.linkedin_url,
+              description: found.description,
+              industries: found.industries,
+              growth_stage: found.growth_stage,
+              employee_estimate: found.employee_estimate,
+              history: found.history,
+              needs_profile_lookup: found.needs_profile_lookup,
+            },
+          }
+        : current,
+    );
+  }, []);
+
   const updateJob = useCallback((job: JobCardData) => {
     setState((current) =>
       current.status === "ready"
@@ -392,7 +510,7 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
       />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
         <div className="flex min-w-0 flex-col gap-6">
-          <AboutSection company={company} />
+          <AboutSection company={company} onLookedUp={applyLookup} />
           <JobsSection company={company} onJobChange={updateJob} />
         </div>
         <div className="flex min-w-0 flex-col gap-6">

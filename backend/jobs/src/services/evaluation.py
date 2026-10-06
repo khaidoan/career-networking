@@ -46,6 +46,7 @@ def apply_evaluation_failure(job: Job, error: Exception) -> None:
     """Store the failure reason, clear the scores and move to ``EVALUATION_FAILURE_INBOX``."""
     for column in SCORE_COLUMNS:
         setattr(job, column, None)
+    job.score_explanation = None
     job.evaluation_error = describe_evaluation_error(error)
     job.inbox_type = EVALUATION_FAILURE_INBOX
     logger.warning(

@@ -351,3 +351,28 @@ def test_endpoint_logs_hold_no_api_key_contact_names_or_profile_urls(
     assert f"Contact search company={company} stored: 1 new, 1 updated" in caplog.text
     for secret in (API_KEY, "Lovelace", "Hopper", "linkedin.com/in", "serpapi.com/search"):
         assert secret not in caplog.text, secret
+
+
+def test_company_lookup_fills_a_name_only_company_once(
+    api: TestClient, migrated_sessions: sessionmaker[Session], fake_llm: FakeLlm
+) -> None:
+    with migrated_sessions() as session, session.begin():
+        company = Company(name="Initech")
+        session.add(company)
+        session.flush()
+        company_id = company.id
+    fake_llm.replies = [
+        json.dumps({"description": "Makes TPS report software.", "industries": ["Software"]})
+    ]
+
+    assert api.get(f"/api/v1/companies/{company_id}").json()["needs_profile_lookup"] is True
+    first = api.post(f"/api/v1/companies/{company_id}/lookup")
+    second = api.post(f"/api/v1/companies/{company_id}/lookup")
+
+    assert first.status_code == 200
+    assert first.json()["description"] == "Makes TPS report software."
+    assert first.json()["industries"] == ["Software"]
+    assert first.json()["needs_profile_lookup"] is False
+    assert second.json() == first.json()
+    assert len(fake_llm.requests) == 1
+    assert api.post("/api/v1/companies/999999/lookup").status_code == 404

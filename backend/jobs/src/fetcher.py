@@ -479,6 +479,7 @@ class FetcherRun:
             description=posting.description,
             source=posting.source,
             posting_location=posting.location or None,
+            posted_at=posting.published_at,
             inbox_type=INBOX_PENDING,
         )
         try:

@@ -136,6 +136,9 @@ class CompanyRead(CompanyCard):
 
 
 class CompanyDetail(CompanyRead):
+    # True when the company has no profile and has never been looked up; Company Details then
+    # calls ``POST /companies/{id}/lookup``.
+    needs_profile_lookup: bool
     job_count: int
     jobs: list[JobCard]
     contacts: list[ContactRead]

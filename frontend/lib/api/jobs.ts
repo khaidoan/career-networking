@@ -34,11 +34,14 @@ export type JobCard = {
   compensation_range: string | null;
   visa_sponsorship: boolean | null;
   overall_score: number | null;
+  /** The model's reason for the overall score; `null` when it gave none or scoring failed. */
+  score_explanation: string | null;
   /** Why the last evaluation failed; the scores are `null` while this is set. */
   evaluation_error: string | null;
   inbox_type: InboxType;
   liked: boolean;
-  /** ISO 8601 timestamps. */
+  /** ISO 8601 timestamps. `posted_at` is the source's published or updated time, if given. */
+  posted_at: string | null;
   discovered_when: string;
   applied_when: string | null;
 };
