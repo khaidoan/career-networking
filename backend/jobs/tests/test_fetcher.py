@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from src import fetcher, scorer
@@ -21,6 +21,7 @@ from src.services import evaluation
 from src.sources.ats_sweep import SweepResult
 from src.sources.boards import BoardScan
 from src.sources.google_jobs import SERPAPI_SEARCH_URL, GoogleJobsResult
+from src.sources.providers import get_provider
 from src.sources.providers.base import BoardRef, Posting
 from src.sources.state import get_fetcher_state
 from src.sources.urls import normalize_url
@@ -571,6 +572,45 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
     # All three jobs are recommended, so the scorer tries to fill in each one's name-only company
     # (the lookups fail, leaving the names).
     assert sorted(enriched) == ["Acme Corp", "Acme Corp", "Globex"]
+
+
+def test_a_run_that_starts_with_no_jobs_saves_at_most_the_first_run_limit(
+    test_settings: Settings,
+    sessions: sessionmaker[Session],
+    sources: FakeSources,
+    fake_http: FakeHttp,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(fetcher, "FIRST_RUN_JOB_LIMIT", 2)
+    _save_preferences(sessions, desired_titles=["Backend Engineer"], country="US")
+
+    def board(key: str, count: int) -> BoardScan:
+        ref = get_provider("greenhouse").board_ref(key)
+        postings = [
+            _posting(
+                f"Backend Engineer {n}",
+                "Acme Corp",
+                f"https://job-boards.greenhouse.io/{key}/jobs/{n}",
+                "greenhouse",
+            )
+            for n in range(count)
+        ]
+        return BoardScan(board=ref, fetched=count, matches=postings)
+
+    sources.sweep = SweepResult(matched_boards=[board("acme", 2), board("globex", 2)])
+    first = _run(test_settings, sessions, fake_http)
+
+    with sessions() as session:
+        assert session.scalar(select(func.count()).select_from(Job)) == 2
+        # Every board is still tracked, including the one whose jobs were over the limit.
+        assert set(session.scalars(select(AtsBoard.board_key))) == {"acme", "globex"}
+    assert (first.job_limit, first.queued, first.over_limit) == (2, 2, 2)
+
+    # The table is no longer empty, so the next run has no limit.
+    sources.sweep = SweepResult(matched_boards=[board("initech", 3)])
+    second = _run(test_settings, sessions, fake_http)
+
+    assert (second.job_limit, second.queued, second.over_limit) == (None, 3, 0)
 
 
 def test_ignored_and_pending_jobs_older_than_seven_days_are_deleted_even_when_paused(

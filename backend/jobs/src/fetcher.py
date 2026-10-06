@@ -7,6 +7,10 @@ Google Jobs search (when enabled and due; its boards are tracked right away) -> 
 saved (and scored) a second time. Each source and each job is isolated, so a failure is logged
 and the run continues. A Postgres advisory lock keeps two runs from overlapping.
 
+A run that starts with an empty ``jobs`` table (a first run, or after a reset) saves at most
+``FIRST_RUN_JOB_LIMIT`` jobs, so a first sweep cannot queue hundreds of jobs for scoring; it
+still scans and tracks every board.
+
 The fetcher spends no LLM tokens: new jobs are saved in the "pending" inbox, with the company by
 name only, and the scorer (``src.scorer``) evaluates them. Only postings that pass the free
 filters (title, seniority, country, 24-hour recency) and both duplicate checks are saved.
@@ -76,6 +80,8 @@ BOARD_PRUNE_AFTER = timedelta(days=30)
 # ingested while under 24 hours old, so a deleted job cannot come back through the same posting.
 JOB_RETENTION = timedelta(days=7)
 TRACKED_POLL_CONCURRENCY = 8
+# New jobs saved by a run that starts with no jobs at all; each one costs a scoring call.
+FIRST_RUN_JOB_LIMIT = 500
 # How far back a Google posting is compared against ATS jobs for the cross-source duplicate check.
 CROSS_SOURCE_DEDUP_WINDOW = timedelta(days=30)
 # Legal-form words ignored when comparing company names ("Acme Corp" matches board slug "acme").
@@ -146,6 +152,10 @@ class RunSummary:
     )
     # New jobs saved in the pending inbox for the scorer.
     queued: int = 0
+    # FIRST_RUN_JOB_LIMIT when the run started with no jobs, else None (no limit).
+    job_limit: int | None = None
+    # New jobs not saved because job_limit was reached.
+    over_limit: int = 0
     boards_pruned: int = 0
     expired_jobs_deleted: int = 0
     duration_seconds: float = 0.0
@@ -155,6 +165,7 @@ class RunSummary:
         return (
             f"Fetcher run finished in {self.duration_seconds:.1f}s: {per_source}; "
             f"queued_for_scoring={self.queued} "
+            f"job_limit={self.job_limit} not_saved_over_limit={self.over_limit} "
             f"boards_pruned={self.boards_pruned} expired_jobs_deleted={self.expired_jobs_deleted}"
         )
 
@@ -229,6 +240,9 @@ def run_fetch(
             summary.status = STATUS_PREFERENCES_INCOMPLETE
             return summary
 
+        if not _has_jobs(session_factory):
+            summary.job_limit = FIRST_RUN_JOB_LIMIT
+            logger.info("No jobs saved yet: this run saves at most %d", FIRST_RUN_JOB_LIMIT)
         logger.info("Fetcher run started")
         client = client_factory()
         try:
@@ -467,6 +481,8 @@ class FetcherRun:
             if url in existing:
                 stats.duplicate += 1
                 continue
+            if self._limit_reached():
+                continue
             try:
                 if recover_descriptions:
                     recover_full_description(posting, self.client)
@@ -474,6 +490,16 @@ class FetcherRun:
             except Exception:
                 stats.failed += 1
                 logger.exception("Could not ingest %r from %s", posting.title, posting.source)
+
+    def _limit_reached(self) -> bool:
+        """True (and counted) once the run has saved ``job_limit`` jobs."""
+        limit = self.summary.job_limit
+        if limit is None or self.summary.queued < limit:
+            return False
+        if self.summary.over_limit == 0:
+            logger.info("Saved %d jobs, the limit for a first run; not saving more", limit)
+        self.summary.over_limit += 1
+        return True
 
     def ingest_one(self, url: str, posting: Posting, stats: SourceStats) -> None:
         """Save one new posting as a pending job (company by name only) for the scorer."""
@@ -600,6 +626,11 @@ def prune_boards(session_factory: sessionmaker[Session], now: datetime) -> int:
     if pruned:
         logger.info("Pruned %d boards with no match in %d days", pruned, BOARD_PRUNE_AFTER.days)
     return pruned
+
+
+def _has_jobs(session_factory: sessionmaker[Session]) -> bool:
+    with session_factory() as session:
+        return session.scalar(select(Job.id).limit(1)) is not None
 
 
 def delete_expired_jobs(session_factory: sessionmaker[Session], now: datetime) -> int:
