@@ -7,7 +7,6 @@ import {
   Building2,
   ChartColumn,
   CircleAlert,
-  ExternalLink,
   FileText,
   RotateCw,
   SearchX,
@@ -26,7 +25,6 @@ import {
   MatchStrengthBadge,
   VisaIndicator,
 } from "@/components/jobs/match-indicators";
-import { ReEvaluateButton } from "@/components/jobs/re-evaluate-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -123,10 +121,10 @@ function ScoresSection({ job }: { job: JobDetail }) {
 
 function DescriptionSection({
   job,
-  onEvaluated,
+  onApplied,
 }: {
   job: JobDetail;
-  onEvaluated: (job: JobDetail) => void;
+  onApplied: (job: JobDetail) => void;
 }) {
   return (
     <DetailSection id="description" title="Job description" icon={FileText}>
@@ -140,15 +138,9 @@ function DescriptionSection({
           No description was found for this job.
         </p>
       )}
-      <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Score this job again against your current preferences.
-        </p>
-        <ReEvaluateButton
-          job={job}
-          onEvaluated={onEvaluated}
-          className="self-start sm:self-auto"
-        />
+      {/* Apply comes after the description, once the user has read it. */}
+      <div className="border-t pt-4">
+        <ApplyAction job={job} onApplied={onApplied} />
       </div>
     </DetailSection>
   );
@@ -213,7 +205,7 @@ function NetworkingSection({
     <DetailSection
       id="networking"
       title="Networking / Outreach"
-      description="People at this company who could help with a mock interview or a referral."
+      description="Find people at this company who could help with a mock interview or a referral."
       icon={UsersRound}
     >
       <FindContactsButton
@@ -221,31 +213,15 @@ function NetworkingSection({
         jobId={job.id}
         status={job.contact_search}
         onFound={onContactsFound}
+        peopleUrl={
+          company.linkedin_url ? linkedInPeopleUrl(company.linkedin_url) : null
+        }
       />
       <ContactList
         contacts={job.contacts}
         companyName={company.name}
         jobTitle={job.title}
-        contactSearch={job.contact_search}
       />
-      {company.linkedin_url && (
-        <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            Browse people at {company.name} on LinkedIn yourself.
-          </p>
-          <Button asChild variant="outline" className="self-start sm:self-auto">
-            <a
-              href={linkedInPeopleUrl(company.linkedin_url)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              People on LinkedIn
-              <ExternalLink aria-hidden="true" />
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          </Button>
-        </div>
-      )}
     </DetailSection>
   );
 }
@@ -318,15 +294,13 @@ function JobHeader({
           { label: "Salary range", value: job.compensation_range },
         ]}
       />
-      <ApplyAction job={job} onApplied={onChange} />
     </header>
   );
 }
 
 /**
- * Job Details: the header with Apply, the scores, the description with Re-evaluate, the
- * company and its contacts (Find contacts and click-to-connect). A missing job shows a friendly
- * not-found page.
+ * Job Details: the header, the scores, the description with Apply below it, the company and its
+ * contacts (Find contacts and click-to-connect). A missing job shows a friendly not-found page.
  */
 export function JobDetails({ jobId }: { jobId: number }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -423,7 +397,7 @@ export function JobDetails({ jobId }: { jobId: number }) {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
         <div className="flex min-w-0 flex-col gap-6">
           <ScoresSection job={job} />
-          <DescriptionSection job={job} onEvaluated={update} />
+          <DescriptionSection job={job} onApplied={update} />
         </div>
         <div className="flex min-w-0 flex-col gap-6">
           <CompanySection job={job} />

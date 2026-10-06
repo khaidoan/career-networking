@@ -1,8 +1,9 @@
-from datetime import datetime
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, Text, false, func, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Text, event, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm.attributes import NEVER_SET, NO_VALUE
 from sqlalchemy.types import TIMESTAMP
 
 from src.models.base import Base, TimestampMixin
@@ -10,7 +11,10 @@ from src.models.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from src.models.company import Company
 
-INBOX_TYPES = ("recommended", "applied", "ignored", "need_attention")
+# The inboxes the user sees, and "pending": saved by the fetcher, not scored yet, never listed.
+LISTED_INBOXES = ("recommended", "applied", "ignored", "need_attention")
+INBOX_PENDING = "pending"
+INBOX_TYPES = (*LISTED_INBOXES, INBOX_PENDING)
 SCORE_COLUMNS = ("overall_score", "experience_score", "skill_score", "industry_exp_score")
 
 
@@ -26,6 +30,7 @@ class Job(TimestampMixin, Base):
             name="inbox_type_allowed",
         ),
         *(_score_range_check(column) for column in SCORE_COLUMNS),
+        Index("ix_jobs_inbox_type_inbox_entered_at_id", "inbox_type", "inbox_entered_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -57,9 +62,24 @@ class Job(TimestampMixin, Base):
         Text,
         nullable=False,
         index=True,
-        default="recommended",
-        server_default=text("'recommended'"),
+        default=INBOX_PENDING,
+        server_default=text("'pending'"),
     )
+    # When the job entered its current inbox (for Recommended, when it was scored); kept up to
+    # date by the listener below, and the order every inbox is listed in.
+    inbox_entered_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+    # The posting's location as the source gave it, for the scorer's evaluation.
+    posting_location: Mapped[str | None] = mapped_column(Text)
+    # Failed scoring attempts, and when the scorer may try this pending job again.
+    scoring_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    next_scoring_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     liked: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     discovered_when: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
@@ -67,3 +87,13 @@ class Job(TimestampMixin, Base):
     applied_when: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
     company: Mapped["Company"] = relationship(back_populates="jobs")
+
+
+@event.listens_for(Job.inbox_type, "set")
+def _stamp_inbox_change(job: Job, value: str, old_value: Any, _initiator: object) -> None:
+    """Every move to another inbox (scoring, Apply) restarts ``inbox_entered_at``.
+
+    The first value of a new job is not a move; the column default (or a given time) applies.
+    """
+    if old_value not in (NO_VALUE, NEVER_SET) and value != old_value:
+        job.inbox_entered_at = datetime.now(UTC)

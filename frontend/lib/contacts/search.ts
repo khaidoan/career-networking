@@ -20,13 +20,20 @@ function plural(count: number, word: string): string {
   return `${count} ${count === 1 ? word : `${word}s`}`;
 }
 
-/** For example "Found 3 new contacts, updated 1." or "No new contacts found." */
+/**
+ * What a search did, in the user's terms: new contacts, people already in the list, or nobody
+ * matching on LinkedIn (the Google search found no profiles for the company and role).
+ */
 export function describeContactSearch(
-  result: Pick<ContactSearchResult, "created" | "updated">,
+  result: Pick<ContactSearchResult, "found" | "created" | "updated">,
 ): string {
-  const updated = result.updated > 0 ? `, updated ${result.updated}` : "";
-  if (result.created === 0) {
-    return `No new contacts found${updated}.`;
+  const updated =
+    result.updated > 0 ? ` (${plural(result.updated, "contact")} updated)` : "";
+  if (result.created > 0) {
+    return `Found ${plural(result.created, "new contact")}${updated}.`;
   }
-  return `Found ${plural(result.created, "new contact")}${updated}.`;
+  if (result.found > 0) {
+    return `No new contacts: everyone found is already in your list${updated}.`;
+  }
+  return "No matching people were found on LinkedIn for this company and role.";
 }

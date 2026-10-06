@@ -1,7 +1,7 @@
 """Networking agent: finds up to five people at a company for mock interviews or referrals.
 
 It runs only when the user clicks "Find contacts"; the fetcher and schedules never call it. One
-run is exactly one SerpApi Google search (``site:linkedin.com/in``) and at most one LLM
+run is exactly one SerpApi web search (``site:linkedin.com/in``) and at most one LLM
 selection call (plus the standard validation retry). The LLM only returns indexes into the
 numbered search results and a category; every name, title and profile URL is parsed in code
 from the chosen result, so nothing stored is invented by the model. The agent writes nothing:
@@ -18,6 +18,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
+from src.agents.company_lookup import enrich_company, looks_like_slug
 from src.config import Settings
 from src.llm import complete_structured, llm_safe_preferences, resolve_system_prompt
 from src.models import Company, Job, Preferences
@@ -29,8 +30,9 @@ from src.sources.serpapi import SerpApiError, serpapi_search
 logger = logging.getLogger(__name__)
 
 AGENT_NAME = "networking"
-SEARCH_ENGINE = "google"
-SEARCH_RESULT_COUNT = 20
+# DuckDuckGo keeps to ``site:linkedin.com/in``. Google and Bing (through SerpApi) often ignore it
+# and return the company's own site and job ads, which leaves no profiles to pick from.
+SEARCH_ENGINE = "duckduckgo"
 MAX_CONTACTS = 5
 MAX_MANAGERS = 1
 MAX_RESULT_TITLE_CHARS = 200
@@ -42,7 +44,7 @@ CATEGORIES = (CATEGORY_PEER, CATEGORY_MANAGER)
 NETWORKING_SYSTEM_PROMPT = """\
 You help a job seeker find people at a company to ask for a mock interview or a referral.
 You receive the company name, the job title they want, the skills from the job that match
-theirs, their full skill list, and a numbered list of Google results for LinkedIn profiles
+theirs, their full skill list, and a numbered list of search results for LinkedIn profiles
 (index, result title, snippet).
 
 Pick at most 5 people, best first. Selection rules:
@@ -67,6 +69,7 @@ _SENIORITY_WORDS = (
     "junior",
     "jr",
     "intern",
+    "v",
     "iv",
     "iii",
     "ii",
@@ -74,6 +77,8 @@ _SENIORITY_WORDS = (
     "1",
     "2",
     "3",
+    "4",
+    "5",
 )
 # A "/" neighbour means the word is part of a term like "I/O", not a level. "Lead" is a level
 # only before another word ("Lead Engineer"); at the end it is the role itself ("Tech Lead").
@@ -157,14 +162,23 @@ def clean_role_title(title: str) -> str:
 
 
 def _phrase(text: str) -> str:
-    """Text safe to put inside a quoted Google phrase: quotes removed, whitespace collapsed."""
+    """Text safe to put inside a quoted phrase: quotes removed, whitespace collapsed."""
     return " ".join(_QUOTES.sub(" ", text).split())
 
 
+def _role_words(role: str) -> str:
+    # Unquoted words with hyphens as spaces: profiles say "Full Stack", "Full-Stack" or
+    # "Fullstack", and an exact phrase misses most of them.
+    return " ".join(_QUOTES.sub(" ", role).replace("-", " ").split())
+
+
 def build_query(company_name: str, job_title: str) -> str:
-    """``site:linkedin.com/in "<company>" "<role>"``; skills are deliberately not included."""
+    """``site:linkedin.com/in "<company>" <role words>``; skills are deliberately not included.
+
+    Only the company is an exact phrase; the role is plain words so its spelling can vary.
+    """
     role = clean_role_title(job_title)
-    return f'site:linkedin.com/in "{_phrase(company_name)}" "{_phrase(role)}"'
+    return f'site:linkedin.com/in "{_phrase(company_name)}" {_role_words(role)}'
 
 
 def match_skills(hard_skills: Iterable[str], description: str | None) -> list[str]:
@@ -292,6 +306,15 @@ def _user_content(
     return "\n".join(lines)
 
 
+def _resolve_official_name(session: Session, company: Company, job: Job) -> None:
+    try:
+        with session.begin_nested():
+            enrich_company(session, company, job.description)
+    except Exception as error:
+        # The search still runs with the slug; it just finds less.
+        logger.warning("Company name lookup failed for company=%d: %s", company.id, error)
+
+
 def find_contacts(
     session: Session,
     settings: Settings,
@@ -304,15 +327,19 @@ def find_contacts(
 
     Raises ``SerpApiError`` when the search fails (or no key is configured) and lets
     ``LlmError`` / ``LlmOutputError`` propagate. Zero usable search results is a success that
-    skips the LLM call. Writes nothing; logs only the company id and counts.
+    skips the LLM call. Writes nothing except, for a company still named after a job board's
+    slug ("capitalone"), its official name (one company lookup call, so the search and the
+    result filter use "Capital One"); logs only the company id and counts.
     """
     if settings.serpapi_api_key is None:
         raise SerpApiError("SERPAPI_API_KEY is not set")
+    if looks_like_slug(company.name):
+        _resolve_official_name(session, company, job)
     data = serpapi_search(
         client,
         api_key=settings.serpapi_api_key.get_secret_value(),
         engine=SEARCH_ENGINE,
-        params={"q": build_query(company.name, job.title), "num": SEARCH_RESULT_COUNT},
+        params={"q": build_query(company.name, job.title)},
     )
     results = profile_results(data, company.name)
     outcome = NetworkingResult(results=len(results))

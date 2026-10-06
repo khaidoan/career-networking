@@ -1,15 +1,11 @@
 "use client";
 
 import { useId, useState } from "react";
-import { CircleCheck, ExternalLink, UsersRound } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { CopyMessageDialog } from "@/components/contacts/copy-message-dialog";
 import { useAnnounce } from "@/components/ui/announcer";
-import {
-  markConnectionRequestSent,
-  type Contact,
-  type ContactSearchStatus,
-} from "@/lib/api/contacts";
+import { markConnectionRequestSent, type Contact } from "@/lib/api/contacts";
 import { copyText } from "@/lib/outreach/clipboard";
 import { buildConnectionMessage } from "@/lib/outreach/message";
 
@@ -25,8 +21,6 @@ type ContactListProps = {
    * nothing is copied and the contact is not marked as sent.
    */
   jobTitle: string | null;
-  /** Picks the empty-state text: a prompt to use Find contacts, or why it is unavailable. */
-  contactSearch?: ContactSearchStatus;
 };
 
 type ContactItemProps = {
@@ -41,36 +35,19 @@ function displayName(contact: Contact): string {
   return contact.name?.trim() || "Unnamed contact";
 }
 
-/** "Request sent" with an icon, so the state never relies on colour. */
-function RequestSentIndicator() {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
-      <CircleCheck aria-hidden="true" className="size-4 text-success" />
-      Request sent
-    </span>
-  );
-}
-
 /**
  * One contact. With a LinkedIn URL the name is a link that, in the same click, opens the
- * profile in a new tab, copies the connection message and marks the request as sent.
+ * profile in a new tab, copies the connection message and records the request as sent (not
+ * shown; it keeps a later contact search from changing the contact).
  */
 function ContactItem({
-  contact: initialContact,
+  contact,
   companyName,
   jobTitle,
   hintId,
   onCopyFailed,
 }: ContactItemProps) {
   const announce = useAnnounce();
-  // The saved copy only applies to the contact it was saved from, so a list refreshed by a
-  // contact search (with possibly newer titles) is shown as received.
-  const [saved, setSaved] = useState<{
-    from: Contact;
-    contact: Contact;
-  } | null>(null);
-  const contact =
-    saved && saved.from === initialContact ? saved.contact : initialContact;
   const name = displayName(contact);
 
   function connect() {
@@ -91,16 +68,8 @@ function ContactItem({
         onCopyFailed(message);
       }
     });
-    void markConnectionRequestSent(contact.id).then((result) => {
-      if (result.ok) {
-        setSaved({ from: initialContact, contact: result.contact });
-      } else {
-        announce(
-          `Could not mark the request to ${name} as sent. ${result.message}`,
-          "error",
-        );
-      }
-    });
+    // Bookkeeping only (the status is not shown), so a failure is not reported.
+    void markConnectionRequestSent(contact.id);
   }
 
   return (
@@ -128,52 +97,24 @@ function ContactItem({
           <span className="text-sm text-muted-foreground">{contact.title}</span>
         )}
       </div>
-      {contact.connection_request_sent && <RequestSentIndicator />}
     </li>
   );
 }
 
-function emptyStateText(
-  companyName: string,
-  contactSearch: ContactSearchStatus | undefined,
-): string {
-  if (contactSearch && !contactSearch.available) {
-    return contactSearch.unavailable_reason === "no_api_key"
-      ? `Contacts at ${companyName} can be found once a SerpApi key is set up.`
-      : `Contacts at ${companyName} can be found once one of its jobs is recommended or applied to.`;
-  }
-  if (contactSearch?.last_searched_at) {
-    return `The last search found no one at ${companyName}. Select Find contacts to try again.`;
-  }
-  return `Select Find contacts to look for people at ${companyName} on LinkedIn.`;
-}
-
 /**
- * A company's networking contacts with click-to-connect, or an empty state. Used on Job
- * Details and Company Details. Nothing here sends anything to LinkedIn.
+ * A company's networking contacts with click-to-connect; nothing at all until there are
+ * contacts. Used on Job Details and Company Details. Nothing here sends anything to LinkedIn.
  */
 export function ContactList({
   contacts,
   companyName,
   jobTitle,
-  contactSearch,
 }: ContactListProps) {
   const hintId = useId();
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
 
   if (contacts.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-surface px-6 py-8 text-center">
-        <UsersRound
-          aria-hidden="true"
-          className="size-7 text-muted-foreground"
-        />
-        <p className="font-medium text-foreground">No contacts yet</p>
-        <p className="max-w-md text-sm text-muted-foreground">
-          {emptyStateText(companyName, contactSearch)}
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -184,7 +125,7 @@ export function ContactList({
       <p id={hintId} className="text-sm text-muted-foreground">
         {jobTitle === null
           ? "Selecting a name opens their LinkedIn profile."
-          : "Selecting a name opens their LinkedIn profile, copies a connection message and marks the request as sent."}
+          : "Clicking on a name opens their LinkedIn profile.  A sample connection message will be copied to the clipboard for you to use."}
       </p>
       <ul aria-label={`Contacts at ${companyName}`} className="divide-y">
         {contacts.map((contact) => (

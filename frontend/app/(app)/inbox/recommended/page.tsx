@@ -11,7 +11,7 @@ export default function RecommendedPage() {
     <RequireProfileSetup>
       <InboxPage
         inbox="recommended"
-        description="Jobs that match your preferences, liked jobs first, then newest."
+        description="Jobs that match your preferences, newest scored first. Jobs scored while you read are added when you reach the bottom."
       />
     </RequireProfileSetup>
   );

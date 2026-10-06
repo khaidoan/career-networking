@@ -1,4 +1,4 @@
-"""Discovered jobs: inboxes, Job Details, like, apply and re-evaluate (``/api/v1/jobs``)."""
+"""Discovered jobs: inboxes, Job Details, like and apply (``/api/v1/jobs``)."""
 
 import logging
 from datetime import UTC, datetime
@@ -9,13 +9,13 @@ from pydantic import AfterValidator
 from sqlalchemy import Row, select
 from sqlalchemy.orm import Session, joinedload
 
-from src.agents.evaluator import evaluate_job
 from src.api.v1.common import (
     PAGE_SIZE,
     AppSettings,
     DbSession,
     PageCursor,
     PageLimit,
+    fetch_feed_page,
     fetch_page,
     one_of,
 )
@@ -23,15 +23,9 @@ from src.api.v1.schemas.contacts import ContactSearchStatus
 from src.api.v1.schemas.job_card import JobCard
 from src.api.v1.schemas.jobs import JobDetail, JobList, JobPatch
 from src.config import Settings
-from src.models import INBOX_TYPES, Company, Job, Preferences
+from src.models import INBOX_PENDING, LISTED_INBOXES, Company, Job
 from src.services.contacts import contact_search_availability
-from src.services.evaluation import (
-    apply_evaluation_failure,
-    apply_evaluation_success,
-    can_move_inbox,
-    job_for_evaluation,
-)
-from src.services.paging import SortKey, as_bool, as_datetime, as_int
+from src.services.paging import SortKey, as_datetime, as_int
 from src.services.search import name_matches, normalize_search
 from src.vocabularies import JOB_TYPES, SENIORITY_LEVELS, WORK_ARRANGEMENTS
 
@@ -40,18 +34,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 INBOX_APPLIED = "applied"
-PREFERENCES_ROW_ID = 1
 JOB_NOT_FOUND = "Job not found"
 MAX_SEARCH_LENGTH = 200
 
-# Liked first, then newest; the id makes the key unique so paging is stable.
+INBOX_RECOMMENDED = "recommended"
+
+# Newest arrival in the inbox first (for Recommended, the newest scored); the id makes the key
+# unique so paging is stable.
 JOB_SORT = (
-    SortKey(Job.liked, descending=True, decode=as_bool),
-    SortKey(Job.discovered_when, descending=True, decode=as_datetime),
+    SortKey(Job.inbox_entered_at, descending=True, decode=as_datetime),
     SortKey(Job.id, descending=True, decode=as_int),
 )
 
-InboxSlug = Annotated[str, AfterValidator(one_of(INBOX_TYPES))]
+# Pending (not yet scored) jobs are never listed.
+InboxSlug = Annotated[str, AfterValidator(one_of(LISTED_INBOXES))]
 SenioritySlug = Annotated[str, AfterValidator(one_of(SENIORITY_LEVELS))]
 WorkArrangementSlug = Annotated[str, AfterValidator(one_of(WORK_ARRANGEMENTS))]
 JobTypeSlug = Annotated[str, AfterValidator(one_of(JOB_TYPES))]
@@ -59,7 +55,7 @@ JobTypeSlug = Annotated[str, AfterValidator(one_of(JOB_TYPES))]
 
 def _job_sort_values(row: Row[tuple[Job, Company]]) -> list[object]:
     job = row[0]
-    return [job.liked, job.discovered_when, job.id]
+    return [job.inbox_entered_at, job.id]
 
 
 @router.get("")
@@ -75,7 +71,12 @@ def list_jobs(
     cursor: PageCursor = None,
     limit: PageLimit = PAGE_SIZE,
 ) -> JobList:
-    """One page of an inbox, liked first then newest, with optional filters and company search.
+    """One page of an inbox, with optional filters and company search.
+
+    Every inbox is newest arrival first. Recommended is a feed (see ``feed_page``): later pages
+    first bring jobs scored since the list was opened, then older ones not shown yet, and its
+    ``next_cursor`` never runs out, so asking again later returns newly scored jobs. The other
+    inboxes end with ``next_cursor`` null.
 
     Filters of different kinds combine with AND; several values of one filter match any of them.
     """
@@ -94,7 +95,8 @@ def list_jobs(
     if search:
         statement = statement.where(name_matches(Company.name, search))
 
-    rows, next_cursor = fetch_page(
+    page = fetch_feed_page if inbox == INBOX_RECOMMENDED else fetch_page
+    rows, next_cursor = page(
         session, statement, JOB_SORT, cursor=cursor, limit=limit, sort_values=_job_sort_values
     )
     return JobList(
@@ -106,7 +108,7 @@ def list_jobs(
 def _load_job(session: Session, job_id: int) -> Job:
     job = session.scalars(
         select(Job)
-        .where(Job.id == job_id)
+        .where(Job.id == job_id, Job.inbox_type != INBOX_PENDING)
         .options(joinedload(Job.company).selectinload(Company.networking_contacts))
     ).first()
     if job is None:
@@ -149,29 +151,4 @@ def apply_to_job(job_id: int, session: DbSession, settings: AppSettings) -> JobD
         job.applied_when = datetime.now(UTC)
     session.commit()
     logger.info("Job %d marked as applied", job_id)
-    return _to_detail(session, settings, job)
-
-
-@router.post("/{job_id}/re-evaluate")
-def re_evaluate_job(job_id: int, session: DbSession, settings: AppSettings) -> JobDetail:
-    """Run the evaluator again with the current preferences; 200 even when evaluation fails.
-
-    Success updates the scores and extracted fields and clears ``evaluation_error``; failure
-    stores the new reason and clears the scores. Only Recommended and Ignored jobs may change
-    inbox, and only on success; Applied and Need Attention jobs keep theirs.
-    """
-    job = _load_job(session, job_id)
-    preferences = session.get(Preferences, PREFERENCES_ROW_ID)
-    try:
-        evaluation = evaluate_job(session, job_for_evaluation(job), preferences)
-    except Exception as error:
-        apply_evaluation_failure(job, error, allow_inbox_move=False)
-    else:
-        apply_evaluation_success(
-            job, evaluation, settings.match_threshold, allow_inbox_move=can_move_inbox(job)
-        )
-    session.commit()
-    logger.info(
-        "Job %d re-evaluated: inbox=%s scored=%s", job_id, job.inbox_type, not job.evaluation_error
-    )
     return _to_detail(session, settings, job)

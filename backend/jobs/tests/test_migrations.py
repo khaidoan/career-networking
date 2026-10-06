@@ -32,6 +32,7 @@ EXPECTED_REVISION_ORDER = [
     "add_preferences_auto_apply",
     "add_preferences_fetch_time_and_fetch_timezone",
     "add_preferences_additional_information",
+    "separate_job_scoring",
 ]
 
 

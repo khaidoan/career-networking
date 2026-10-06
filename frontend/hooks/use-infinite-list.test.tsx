@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -29,6 +29,8 @@ function RowList({ fetchPage }: { fetchPage: FetchPage<Row> }) {
       </ul>
       <InfiniteListFooter
         hasMore={list.hasMore}
+        caughtUp={list.caughtUp}
+        caughtUpMessage="All caught up."
         loadingMore={list.loadingMore}
         error={list.loadMoreError}
         onLoadMore={list.loadMore}
@@ -96,5 +98,68 @@ describe("useInfiniteList", () => {
     await vi.waitFor(() =>
       expect(screen.getByRole("link", { name: "Second" })).toHaveFocus(),
     );
+  });
+
+  it("pauses when a feed is caught up and checks again when the end scrolls back into view", async () => {
+    // jsdom has no IntersectionObserver; this one reports what the test says is visible.
+    const observers = new Set<FakeObserver>();
+    class FakeObserver {
+      constructor(private callback: IntersectionObserverCallback) {}
+      observe() {
+        observers.add(this);
+      }
+      disconnect() {
+        observers.delete(this);
+      }
+      report(visible: boolean) {
+        this.callback(
+          [{ isIntersecting: visible } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        );
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    const setEndVisible = (visible: boolean) =>
+      act(() => [...observers].forEach((observer) => observer.report(visible)));
+
+    const fetchPage = vi.fn<FetchPage<Row>>(async (cursor) => {
+      if (cursor === null) {
+        return { ok: true, items: [{ id: 1, name: "First" }], nextCursor: "a" };
+      }
+      if (cursor === "a") {
+        return { ok: true, items: [], nextCursor: "b" };
+      }
+      return {
+        ok: true,
+        items: [{ id: 3, name: "Scored later" }],
+        nextCursor: "c",
+      };
+    });
+    render(
+      <AnnouncerProvider>
+        <RowList fetchPage={fetchPage} />
+      </AnnouncerProvider>,
+    );
+    await screen.findByText("First");
+
+    // Reaching the end loads the next page, which is empty: caught up.
+    setEndVisible(true);
+    expect(await screen.findByText("All caught up.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Check for new rows" }),
+    ).toBeInTheDocument();
+
+    // Staying at the end does not ask again...
+    setEndVisible(true);
+    setEndVisible(true);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+
+    // ...scrolling away and back does.
+    setEndVisible(false);
+    setEndVisible(true);
+    expect(await screen.findByText("Scored later")).toBeInTheDocument();
+    expect(fetchPage).toHaveBeenLastCalledWith("b", expect.anything());
+    expect(screen.queryByText("All caught up.")).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });

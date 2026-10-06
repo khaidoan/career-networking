@@ -1,10 +1,14 @@
 """The provider interface, the normalized posting type and the shared HTTP client."""
 
+import html
 import json
 import logging
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -71,9 +75,27 @@ class Posting:
     extra: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
+class _SharedTransport(httpx.BaseTransport):
+    """Lends one connection pool to many short-lived clients; only ``HttpClient`` closes it."""
+
+    def __init__(self, transport: httpx.BaseTransport) -> None:
+        self.transport = transport
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        return self.transport.handle_request(request)
+
+    def close(self) -> None:
+        pass
+
+
 class HttpClient:
     """Thread-safe ``httpx`` wrapper: identifying User-Agent, per-request timeout, a global cap
-    on concurrent requests, a response size cap and one retry for transient failures."""
+    on concurrent requests, a response size cap and one retry for transient failures.
+
+    Cookies are kept only inside ``cookie_session()`` (one board scan) and dropped after it. One
+    jar shared by a whole run grew to thousands of sites, and the standard library checks every
+    one of them on each request, which made a full ATS sweep take hours.
+    """
 
     def __init__(
         self,
@@ -83,11 +105,10 @@ class HttpClient:
         timeout: float = REQUEST_TIMEOUT_SECONDS,
         retry_backoff_seconds: float = RETRY_BACKOFF_SECONDS,
     ) -> None:
-        self._client = httpx.Client(
-            transport=transport,
-            timeout=timeout,
-            headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
-        )
+        self._transport = transport or httpx.HTTPTransport()
+        self._shared_transport = _SharedTransport(self._transport)
+        self._timeout = timeout
+        self._local = threading.local()
         self._slots = threading.BoundedSemaphore(max_concurrency)
         self._retry_backoff_seconds = retry_backoff_seconds
 
@@ -98,7 +119,26 @@ class HttpClient:
         self.close()
 
     def close(self) -> None:
-        self._client.close()
+        self._transport.close()
+
+    def _new_client(self) -> httpx.Client:
+        # Cheap: the connection pool (and its TLS setup) lives in the shared transport.
+        return httpx.Client(
+            transport=self._shared_transport,
+            timeout=self._timeout,
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
+        )
+
+    @contextmanager
+    def cookie_session(self) -> Iterator[None]:
+        """Keep cookies between this thread's requests until the block ends (one board scan)."""
+        previous = getattr(self._local, "client", None)
+        self._local.client = self._new_client()
+        try:
+            yield
+        finally:
+            self._local.client.close()
+            self._local.client = previous
 
     def request(
         self,
@@ -143,13 +183,20 @@ class HttpClient:
     def _send(
         self, method: str, url: str, max_bytes: int, **kwargs: Any
     ) -> tuple[httpx.Response, bytes]:
-        with self._client.stream(method, url, follow_redirects=False, **kwargs) as response:
-            body = bytearray()
-            for chunk in response.iter_bytes():
-                body.extend(chunk)
-                if len(body) > max_bytes:
-                    raise SourceError(f"{method} {_host(url)} response is too large")
-            return response, bytes(body)
+        session = getattr(self._local, "client", None)
+        # Outside a cookie session every request gets a fresh client, so no cookies are kept.
+        client = session or self._new_client()
+        try:
+            with client.stream(method, url, follow_redirects=False, **kwargs) as response:
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > max_bytes:
+                        raise SourceError(f"{method} {_host(url)} response is too large")
+                return response, bytes(body)
+        finally:
+            if session is None:
+                client.close()
 
     def get_json(self, url: str, **kwargs: Any) -> Any:
         _response, body = self.request("GET", url, **kwargs)
@@ -232,6 +279,14 @@ class AtsProvider(ABC):
         """The full description of the posting at ``url`` through the provider's API."""
         return None
 
+    def fetch_company_name(self, board: BoardRef, client: HttpClient) -> str | None:
+        """The employer's name from the board itself, for providers whose postings do not carry
+        it (otherwise the board's slug would become the company name). ``None`` when unknown.
+
+        Called once per scanned board that has matching postings; errors propagate.
+        """
+        return None
+
     def board_ref(self, board_key: str, company_name: str | None = None) -> BoardRef:
         return BoardRef(
             provider=self.name,
@@ -239,6 +294,20 @@ class AtsProvider(ABC):
             company_name=company_name,
             board_url=self.board_url(board_key),
         )
+
+
+_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+
+
+def page_title(page: str, *, drop_suffix: str = "") -> str | None:
+    """The HTML page's ``<title>`` text (entities decoded), without ``drop_suffix``."""
+    match = _TITLE.search(page)
+    if match is None:
+        return None
+    title = " ".join(html.unescape(match.group(1)).split())
+    if drop_suffix and title.lower().endswith(drop_suffix.lower()):
+        title = title[: -len(drop_suffix)].strip()
+    return title or None
 
 
 def company_for(board: BoardRef, reported: object = None) -> str:

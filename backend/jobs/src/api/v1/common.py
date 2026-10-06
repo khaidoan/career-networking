@@ -16,6 +16,7 @@ from src.services.paging import (
     MAX_PAGE_SIZE,
     InvalidCursorError,
     SortKey,
+    feed_page,
     keyset_page,
 )
 from src.sources.providers.base import HttpClient, create_http_client
@@ -59,6 +60,26 @@ def fetch_page(
     """``keyset_page`` with a malformed cursor reported as a 422 on the ``cursor`` parameter."""
     try:
         return keyset_page(
+            session, statement, keys, cursor=cursor, limit=limit, sort_values=sort_values
+        )
+    except InvalidCursorError:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "cursor"), "msg": INVALID_CURSOR_MESSAGE}]
+        ) from None
+
+
+def fetch_feed_page(
+    session: Session,
+    statement: Select[Any],
+    keys: Sequence[SortKey],
+    *,
+    cursor: str | None,
+    limit: int,
+    sort_values: Callable[[Row[Any]], Sequence[object]],
+) -> tuple[list[Row[Any]], str]:
+    """``feed_page`` with a malformed cursor reported as a 422 on the ``cursor`` parameter."""
+    try:
+        return feed_page(
             session, statement, keys, cursor=cursor, limit=limit, sort_values=sort_values
         )
     except InvalidCursorError:

@@ -4,14 +4,15 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 
 from src.sources import ats_sweep
 from src.sources.ats_sweep import directory_url, run_sweep_batch
-from src.sources.boards import scan_board
+from src.sources.boards import BoardScan, scan_board
 from src.sources.filters import SearchCriteria, location_matches
 from src.sources.providers import PROVIDERS, detect_board, get_provider
-from src.sources.providers.base import BoardRef, Posting
+from src.sources.providers.base import BoardRef, HttpClient, Posting, company_for
 from src.sources.state import FileFetcherState
 from src.vocabularies import ATS_PROVIDERS
 from tests.conftest import FakeHttp, fixture_json, fixture_text
@@ -206,8 +207,14 @@ def test_sweep_uses_stale_directory_cache_rotates_batches_and_skips_without_any_
         json=fixture_json("ats/greenhouse.json"),
     )
 
+    handed_over: list[str] = []
+
+    def save(scan: BoardScan) -> None:
+        handed_over.append(scan.board.board_key)
+        raise RuntimeError("a failed save must not stop the sweep")
+
     with fake_http.client() as client:
-        first = run_sweep_batch(BACKEND_US, client, state, NOW)
+        first = run_sweep_batch(BACKEND_US, client, state, NOW, on_matched=save)
         second = run_sweep_batch(BACKEND_US, client, state, NOW)
 
     # 96 greenhouse boards (stale cache; download failed) + 1 lever board, interleaved.
@@ -215,6 +222,7 @@ def test_sweep_uses_stale_directory_cache_rotates_batches_and_skips_without_any_
     assert first.boards_scanned == 3
     assert state.get_sweep_cursor() == 6  # advanced by 3 on each of the two runs
     assert [scan.board.board_key for scan in first.matched_boards] == ["company1"]
+    assert handed_over == ["company1"]
     assert len(first.matched_boards[0].matches) == 2
     assert first.boards_failed == 2  # company0 and globex have no mocked board API
     assert second.boards_scanned == 3 and second.matched_boards == []
@@ -236,3 +244,110 @@ def test_state_store_resets_corrupt_files_to_defaults(tmp_path: os.PathLike[str]
 
     assert state.get_sweep_cursor() == 0
     assert state.get_google_jobs_last_run() is None
+
+
+def test_cookies_last_for_one_board_scan_only() -> None:
+    sent: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request.headers.get("cookie"))
+        return httpx.Response(200, json={}, headers={"set-cookie": "session=abc; Path=/"})
+
+    with HttpClient(httpx.MockTransport(handler), retry_backoff_seconds=0) as client:
+        with client.cookie_session():
+            client.get_json("https://board.example.com/page-1")
+            client.get_json("https://board.example.com/page-2")
+        # Outside a session, and in a new one, the earlier board's cookie is gone.
+        client.get_json("https://board.example.com/other")
+        with client.cookie_session():
+            client.get_json("https://board.example.com/next-board")
+
+    assert sent == [None, "session=abc", None, None]
+
+
+def test_boards_without_company_names_in_their_postings_provide_them_from_the_board(
+    fake_http: FakeHttp,
+) -> None:
+    fake_http.add(
+        "https://jobs.ashbyhq.com/baseten", text="<html><head><title>Baseten Jobs</title></head>"
+    )
+    fake_http.add(
+        "https://jobs.lever.co/dnb", text="<title>\n  Dun &amp; Bradstreet\n</title><body></body>"
+    )
+    fake_http.add(
+        "https://hisense.bamboohr.com/careers/company-info",
+        json={"meta": [], "result": {"name": " Hisense  USA ", "id": "1"}},
+    )
+    fake_http.add("https://jobs.lever.co/untitled", text="<html><body>No title</body></html>")
+
+    def name(provider: str, board_key: str) -> str | None:
+        ats = get_provider(provider)
+        with fake_http.client() as client:
+            return ats.fetch_company_name(ats.board_ref(board_key), client)
+
+    assert name("ashby", "baseten") == "Baseten"
+    assert name("lever", "dnb") == "Dun & Bradstreet"
+    assert name("bamboohr", "hisense") == "Hisense USA"
+    assert name("lever", "untitled") is None
+    # Greenhouse postings carry the company name, so the board is never asked.
+    assert name("greenhouse", "acme") is None
+
+
+class _SlugOnlyProvider:
+    """A board whose postings name no company; the board page does."""
+
+    name = "lever"
+
+    def __init__(self, company_name: str | None | Exception) -> None:
+        self.company_name = company_name
+        self.asked = 0
+
+    def fetch_postings(self, board: BoardRef, _client: object, **_kwargs: object) -> list[Posting]:
+        return [
+            Posting(
+                title="Backend Engineer",
+                company=company_for(board),
+                url="https://jobs.lever.co/dnb/1",
+                source="lever",
+                location="Remote, US",
+                published_at=NOW,
+                board=board,
+            )
+        ]
+
+    def enrich(self, _posting: Posting, _client: object) -> None:
+        return None
+
+    def fetch_company_name(self, _board: BoardRef, _client: object) -> str | None:
+        self.asked += 1
+        if isinstance(self.company_name, Exception):
+            raise self.company_name
+        return self.company_name
+
+
+@pytest.mark.parametrize(
+    ("board_name", "found", "expected"),
+    [
+        (None, "Dun & Bradstreet", "Dun & Bradstreet"),
+        (None, RuntimeError("blocked"), "dnb"),
+        ("D&B", "never asked", "D&B"),
+    ],
+)
+def test_scan_board_saves_matches_under_the_board_s_company_name(
+    fake_http: FakeHttp,
+    monkeypatch: pytest.MonkeyPatch,
+    board_name: str | None,
+    found: str | Exception,
+    expected: str,
+) -> None:
+    provider = _SlugOnlyProvider(found)
+    monkeypatch.setattr("src.sources.boards.get_provider", lambda _name: provider)
+    board = BoardRef("lever", "dnb", board_name)
+
+    with fake_http.client() as client:
+        scan = scan_board(board, BACKEND_US, client, NOW)
+
+    assert [posting.company for posting in scan.matches] == [expected]
+    # The name is kept on the board, so a tracked board is not asked again.
+    assert scan.board.company_name == (board_name or (found if isinstance(found, str) else None))
+    assert provider.asked == (0 if board_name else 1)

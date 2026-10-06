@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from src import fetcher
 from src.agents.networking import (
     ContactSelection,
+    build_query,
     clean_role_title,
     find_contacts,
     match_skills,
@@ -74,7 +75,7 @@ def _picks(*picks: tuple[int, str]) -> str:
     return json.dumps({"contacts": [{"index": i, "category": c} for i, c in picks]})
 
 
-def test_one_google_search_with_a_cleaned_role_and_quoted_company_and_no_skills(
+def test_one_search_with_a_quoted_company_loose_role_words_and_no_skills(
     settings: Settings, fake_http: FakeHttp, fake_llm: FakeLlm, session: MagicMock
 ) -> None:
     fake_http.add(SERPAPI_SEARCH_URL, json={"organic_results": RESULTS})
@@ -84,12 +85,26 @@ def test_one_google_search_with_a_cleaned_role_and_quoted_company_and_no_skills(
 
     (request,) = fake_http.requests
     params = request.url.params
-    assert params["engine"] == "google"
-    assert params["num"] == "20"
-    assert params["q"] == 'site:linkedin.com/in "Acme Rockets Inc" "Software Engineer"'
+    # DuckDuckGo keeps to site:linkedin.com/in; Google often ignores it.
+    assert params["engine"] == "duckduckgo"
+    assert params["q"] == 'site:linkedin.com/in "Acme Rockets Inc" Software Engineer'
     assert "python" not in params["q"].lower()
     assert len(fake_llm.requests) == 1
     assert result.found == [] and result.results == 7 and result.selected == 0
+
+
+def test_a_company_named_after_a_board_slug_gets_its_official_name_before_the_search(
+    settings: Settings, fake_http: FakeHttp, fake_llm: FakeLlm, session: MagicMock
+) -> None:
+    fake_http.add(SERPAPI_SEARCH_URL, json={"organic_results": []})
+    fake_llm.replies = [json.dumps({"official_name": "Capital One", "description": "A bank."})]
+    company = Company(id=8, name="capitalone")
+
+    find_contacts(session, settings, fake_http.client(), company, JOB, PREFERENCES)
+
+    assert company.name == "Capital One"
+    (request,) = fake_http.requests
+    assert request.url.params["q"] == 'site:linkedin.com/in "Capital One" Software Engineer'
 
 
 def test_the_llm_sees_only_profile_results_and_safe_preferences(
@@ -183,6 +198,12 @@ def test_search_and_llm_failures_raise_and_logs_hold_no_key_names_or_urls(
         assert secret not in caplog.text
 
 
+def test_role_words_are_unquoted_with_hyphens_as_spaces() -> None:
+    assert build_query('Acme "Labs"', "Senior Full-Stack Engineer 4") == (
+        'site:linkedin.com/in "Acme Labs" Full Stack Engineer'
+    )
+
+
 @pytest.mark.parametrize(
     ("title", "expected"),
     [
@@ -196,6 +217,8 @@ def test_search_and_llm_failures_raise_and_logs_hold_no_key_names_or_urls(
         ("Lead Software Engineer", "Software Engineer"),
         ("Senior Tech Lead", "Tech Lead"),
         ("Team Lead", "Team Lead"),
+        ("Full-Stack Engineer 4", "Full-Stack Engineer"),
+        ("Software Engineer V", "Software Engineer"),
     ],
 )
 def test_role_title_cleanup_strips_only_seniority_and_level_words(

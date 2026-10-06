@@ -1,9 +1,11 @@
 """Company lookup: fills a ``companies`` row from the model's own knowledge (no browsing).
 
-The fetcher only calls it for companies with a recommended job, so no tokens are spent on
-companies whose jobs all go to the Ignored inbox.
+The scorer only calls it for companies with a recommended job, so no tokens are spent on
+companies whose jobs all go to the Ignored inbox. It also returns the company's official name,
+which replaces a name taken from a job board's slug ("capitalone" -> "Capital One").
 """
 
+import re
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, field_validator
@@ -15,6 +17,7 @@ from src.tags import normalize_tags
 
 AGENT_NAME = "company_lookup"
 MAX_DESCRIPTION_CHARS = 6_000
+MAX_NAME_CHARS = 200
 
 COMPANY_LOOKUP_SYSTEM_PROMPT = """\
 You describe a company for a job seeker, using only what you already know. You cannot browse
@@ -22,6 +25,9 @@ the web. You receive the company name and, sometimes, a job description from tha
 can help identify which company is meant.
 
 Return:
+- official_name: the company's name as it commonly writes it (for example "Capital One" for
+  "capitalone"). The name you receive may be a job board's account name, lower-cased or
+  hyphenated.
 - website_url: the company's official website (https URL).
 - linkedin_url: the company's LinkedIn page (https://www.linkedin.com/company/...).
 - description: two or three sentences on what the company does.
@@ -66,6 +72,34 @@ class CompanyProfile(BaseModel):
         return normalize_tags(value if isinstance(value, list) else None) or None
 
 
+class CompanyLookup(CompanyProfile):
+    """The model's reply: the profile plus the official name (not a profile field, so it does not
+    count towards ``is_name_only``)."""
+
+    official_name: str | None = None
+
+    @field_validator("official_name", mode="before")
+    @classmethod
+    def _one_line_name(cls, value: object) -> str | None:
+        name = " ".join(value.split()) if isinstance(value, str) else ""
+        return name if 0 < len(name) <= MAX_NAME_CHARS else None
+
+
+# A job board's account name rather than a company name: one lower-case word, maybe hyphenated.
+_SLUG_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def looks_like_slug(name: str) -> bool:
+    return bool(_SLUG_NAME.match(name.strip()))
+
+
+def _apply_official_name(company: Company, lookup: CompanyLookup) -> None:
+    # Only a slug is replaced; a real name (even one spelled differently) is the user's or the
+    # posting's and stays.
+    if lookup.official_name and looks_like_slug(company.name):
+        company.name = lookup.official_name
+
+
 def _user_content(name: str, description: str | None) -> str:
     content = f"Company name: {name}"
     if description:
@@ -81,29 +115,15 @@ def is_name_only(company: Company) -> bool:
 def enrich_company(session: Session, company: Company, description: str | None = None) -> None:
     """Fill the empty profile fields of an existing company; raises ``LlmError`` like lookup."""
     system_prompt = resolve_system_prompt(session, AGENT_NAME, COMPANY_LOOKUP_SYSTEM_PROMPT)
-    profile = complete_structured(
+    lookup = complete_structured(
         system_prompt,
         _user_content(company.name, description),
-        CompanyProfile,
+        CompanyLookup,
         agent_name=AGENT_NAME,
     )
-    for field, value in profile.model_dump().items():
+    for field in CompanyProfile.model_fields:
+        value = getattr(lookup, field)
         if getattr(company, field) is None and value is not None:
             setattr(company, field, value)
+    _apply_official_name(company, lookup)
     session.flush()
-
-
-def lookup_company(session: Session, name: str, description: str | None = None) -> Company:
-    """Insert (and flush) a company named exactly ``name``, enriched by the LLM.
-
-    Raises ``LlmError`` if the model cannot be used; the caller then inserts a name-only company.
-    The caller owns the transaction.
-    """
-    system_prompt = resolve_system_prompt(session, AGENT_NAME, COMPANY_LOOKUP_SYSTEM_PROMPT)
-    profile = complete_structured(
-        system_prompt, _user_content(name, description), CompanyProfile, agent_name=AGENT_NAME
-    )
-    company = Company(name=name, **profile.model_dump())
-    session.add(company)
-    session.flush()
-    return company

@@ -4,7 +4,7 @@ These checks are free; only postings that pass them reach the evaluator, so they
 spend is controlled. Every rule errs on the side of keeping a posting: when a check cannot tell,
 the evaluator decides.
 
-``RECENCY_WINDOW_DAYS`` is the posting recency window, and postings without a
+``RECENCY_WINDOW`` (48 hours) is the posting recency window, and postings without a
 publish date are skipped (``is_recent`` returns ``False``). Both rules live only in this module;
 the fetcher applies ``is_recent`` to Google Jobs postings too, so no posting older than the
 window is ever processed.
@@ -18,7 +18,7 @@ from src.models import Preferences
 from src.sources.locations import countries_in, is_remote
 from src.vocabularies import SENIORITY_LEVELS
 
-RECENCY_WINDOW_DAYS = 7
+RECENCY_WINDOW = timedelta(hours=48)
 
 _TOKEN = re.compile(r"[\w+#]+")
 
@@ -129,7 +129,7 @@ def bare_remote_allowed(locations: list[str], country: str) -> bool:
 
 
 def recency_cutoff(now: datetime) -> datetime:
-    return now - timedelta(days=RECENCY_WINDOW_DAYS)
+    return now - RECENCY_WINDOW
 
 
 def is_recent(published_at: datetime | None, now: datetime) -> bool:

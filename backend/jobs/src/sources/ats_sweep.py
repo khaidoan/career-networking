@@ -16,7 +16,8 @@ import json
 import logging
 import math
 import re
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -40,6 +41,8 @@ DIRECTORY_MAX_BYTES = 20 * 1024 * 1024
 # Raising this spreads a pass over several runs; the rotation cursor keeps working.
 RUNS_PER_FULL_PASS = 1
 SWEEP_CONCURRENCY = 24
+# How often a sweep logs its progress, in boards.
+PROGRESS_LOG_EVERY = 2000
 
 SLUG = re.compile(r"^[A-Za-z0-9._-]+$")
 # Part of the Workday directory holds instance names ("wd5") in the tenant field; they never
@@ -66,8 +69,15 @@ def run_sweep_batch(
     client: HttpClient,
     state: FetcherState,
     now: datetime | None = None,
+    *,
+    on_matched: Callable[[BoardScan], None] | None = None,
 ) -> SweepResult:
-    """Scan this run's slice of the directory and advance the rotation cursor."""
+    """Scan this run's slice of the directory and advance the rotation cursor.
+
+    ``on_matched`` is called (on the calling thread) for each board with matching postings as
+    soon as it is scanned, so they can be saved while the rest of the sweep runs. A failure in
+    it is logged and the sweep goes on.
+    """
     now = now or datetime.now(UTC)
     directory = load_directory(client, state, now)
     if not directory:
@@ -83,18 +93,50 @@ def run_sweep_batch(
     logger.info("ATS sweep: scanning boards %d-%d of %d", cursor, cursor + batch_size - 1, total)
 
     result = SweepResult(boards_scanned=len(batch))
+    started = time.monotonic()
     with ThreadPoolExecutor(max_workers=SWEEP_CONCURRENCY) as pool:
         scans = pool.map(lambda board: _scan_quietly(board, criteria, client, now), batch)
-        for scan in scans:
+        for done, scan in enumerate(scans, start=1):
             if scan is None:
                 result.boards_failed += 1
-                continue
-            result.postings_fetched += scan.fetched
-            if scan.matches:
-                result.matched_boards.append(scan)
+            else:
+                result.postings_fetched += scan.fetched
+                if scan.matches:
+                    result.matched_boards.append(scan)
+                    _hand_over(scan, on_matched)
+            if done % PROGRESS_LOG_EVERY == 0 or done == len(batch):
+                _log_progress(done, len(batch), result, time.monotonic() - started)
 
     state.set_sweep_cursor((cursor + batch_size) % total)
     return result
+
+
+def _hand_over(scan: BoardScan, on_matched: Callable[[BoardScan], None] | None) -> None:
+    if on_matched is None:
+        return
+    try:
+        on_matched(scan)
+    except Exception:
+        logger.exception(
+            "ATS sweep: could not save matches from %s/%s",
+            scan.board.provider,
+            scan.board.board_key,
+        )
+
+
+def _log_progress(done: int, total: int, result: SweepResult, elapsed: float) -> None:
+    per_minute = done / elapsed * 60 if elapsed > 0 else 0.0
+    left = (total - done) / per_minute if per_minute else 0.0
+    logger.info(
+        "ATS sweep: %d of %d boards scanned (%d with matches, %d failed), %.0f boards/min, "
+        "about %.0f min left",
+        done,
+        total,
+        len(result.matched_boards),
+        result.boards_failed,
+        per_minute,
+        left,
+    )
 
 
 def _scan_quietly(

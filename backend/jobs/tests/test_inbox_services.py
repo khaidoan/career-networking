@@ -18,8 +18,6 @@ from src.models import Company, Job
 from src.services.evaluation import (
     apply_evaluation_failure,
     apply_evaluation_success,
-    can_move_inbox,
-    job_for_evaluation,
 )
 from src.services.paging import (
     InvalidCursorError,
@@ -133,22 +131,15 @@ def _job(inbox: str) -> Job:
 
 
 @pytest.mark.parametrize(
-    ("inbox", "score", "expected_inbox"),
-    [
-        ("recommended", 40, "ignored"),
-        ("ignored", 90, "recommended"),
-        ("applied", 20, "applied"),
-        ("need_attention", 95, "need_attention"),
-    ],
+    ("score", "expected_inbox"),
+    [(40, "ignored"), (THRESHOLD, "recommended"), (90, "recommended")],
 )
-def test_evaluation_success_copies_fields_and_moves_only_recommended_or_ignored_jobs(
-    inbox: str, score: int, expected_inbox: str
+def test_evaluation_success_copies_fields_and_places_the_job_by_score(
+    score: int, expected_inbox: str
 ) -> None:
-    job = _job(inbox)
+    job = _job("pending")
 
-    apply_evaluation_success(
-        job, _evaluation(score), THRESHOLD, allow_inbox_move=can_move_inbox(job)
-    )
+    apply_evaluation_success(job, _evaluation(score), THRESHOLD)
 
     assert job.inbox_type == expected_inbox
     assert (job.overall_score, job.experience_score, job.skill_score, job.industry_exp_score) == (
@@ -166,23 +157,12 @@ def test_evaluation_success_copies_fields_and_moves_only_recommended_or_ignored_
     assert job.evaluation_error is None
 
 
-def test_evaluation_failure_clears_scores_and_the_stored_job_builds_evaluator_input() -> None:
-    job = _job("recommended")
-    apply_evaluation_success(job, _evaluation(88), THRESHOLD, allow_inbox_move=True)
+def test_evaluation_failure_clears_scores_and_moves_the_job_to_ignored() -> None:
+    job = _job("pending")
+    apply_evaluation_success(job, _evaluation(88), THRESHOLD)
 
-    apply_evaluation_failure(job, LlmOutputError("invalid JSON"), allow_inbox_move=False)
+    apply_evaluation_failure(job, LlmOutputError("invalid JSON"))
 
-    assert job.inbox_type == "recommended"
+    assert job.inbox_type == "ignored"
     assert job.evaluation_error == "LlmOutputError: invalid JSON"
     assert job.overall_score is None and job.industry_exp_score is None
-
-    job.company = Company(name="Acme")
-    job.location_city, job.location_state, job.location_country = "Austin", None, "US"
-    job.description = "Build APIs."
-    subject = job_for_evaluation(job)
-    assert (subject.title, subject.company, subject.location, subject.description) == (
-        "Backend Engineer",
-        "Acme",
-        "Austin, US",
-        "Build APIs.",
-    )

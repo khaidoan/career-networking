@@ -115,7 +115,7 @@ Find relevant LinkedIn contacts at target companies when the user asks for them.
 
 **Networking Agent (`networking.py`)**
 - [x] Button-triggered only: a "Find contacts" button on Job Details and Company Details, available for companies with a recommended or applied job (never run by the fetcher or on a schedule)
-- [x] One SerpApi Google search (`site:linkedin.com/in "<company>" "<role title>"`) per click, using the job title without seniority words
+- [x] One SerpApi search per click (`site:linkedin.com/in "<company>" <role words>`, the job title without seniority or level words); DuckDuckGo since 2026-10-06, as Google often ignored the LinkedIn restriction
 - [x] One LLM call picks up to 5 people from the search results (peers first, at most one hiring manager); the user's hard skills found in the posting are ranking signals
 - [x] Populate `company_networking`, deduplicated by normalized LinkedIn URL; contacts already marked "Request sent" are never changed
 

@@ -13,9 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.agents.evaluator import JobEvaluation, JobForEvaluation
 from src.db.session import get_db
-from src.llm import LlmOutputError
 from src.models import Company, CompanyNetworking, Job
 from tests.conftest import TEST_PASSWORD, TEST_USERNAME
 
@@ -71,7 +69,7 @@ def _titles(response: Any) -> list[str]:
     return [item["title"] for item in response.json()["items"]]
 
 
-def test_list_jobs_filters_searches_orders_liked_first_and_pages_with_a_cursor(
+def test_list_jobs_filters_searches_orders_newest_arrival_first_and_pages_with_a_cursor(
     signed_in: TestClient, migrated_sessions: sessionmaker[Session]
 ) -> None:
     with migrated_sessions() as session, session.begin():
@@ -84,7 +82,7 @@ def test_list_jobs_filters_searches_orders_liked_first_and_pages_with_a_cursor(
                 f"Stripe {day}",
                 inbox_type="recommended",
                 seniority_level="senior",
-                discovered_when=NOW - timedelta(days=day),
+                inbox_entered_at=NOW - timedelta(days=day),
                 liked=day == 3,
             )
         _job(session, stripe, "Stripe mid", inbox_type="recommended", seniority_level="mid")
@@ -95,10 +93,11 @@ def test_list_jobs_filters_searches_orders_liked_first_and_pages_with_a_cursor(
         "/api/v1/jobs",
         params={"inbox": "recommended", "seniority": "senior", "company": "strpe", "limit": 3},
     )
-    assert _titles(first) == ["Stripe 3", "Stripe 0", "Stripe 1"]
+    # Newest arrival first; liked jobs are not moved up.
+    assert _titles(first) == ["Stripe 0", "Stripe 1", "Stripe 2"]
     card = first.json()["items"][0]
     assert card["company_name"] == "Stripe" and card["company_industries"] == ["Fintech"]
-    assert card["company_growth_stage"] == "Late-stage" and card["liked"] is True
+    assert card["company_growth_stage"] == "Late-stage" and card["liked"] is False
 
     cursor = first.json()["next_cursor"]
     second = signed_in.get(
@@ -111,14 +110,16 @@ def test_list_jobs_filters_searches_orders_liked_first_and_pages_with_a_cursor(
             "cursor": cursor,
         },
     )
-    assert _titles(second) == ["Stripe 2"]
-    assert second.json()["next_cursor"] is None
+    assert _titles(second) == ["Stripe 3"]
+    # Recommended is a feed: its cursor never runs out, so newly scored jobs can still arrive.
+    assert second.json()["next_cursor"] is not None
 
     liked_only = signed_in.get("/api/v1/jobs", params={"inbox": "recommended", "liked": "true"})
     assert _titles(liked_only) == ["Stripe 3"]
 
     bad = [
         {"inbox": "need-attention"},
+        {"inbox": "pending"},
         {"inbox": "recommended", "seniority": "wizard"},
         {"inbox": "recommended", "cursor": "garbage"},
         {"inbox": "recommended", "limit": 51},
@@ -178,69 +179,6 @@ def test_like_apply_and_connection_request_are_saved_and_keep_first_timestamps(
     assert missing.status_code == 404
 
 
-def test_re_evaluate_updates_scores_or_stores_the_error_and_returns_200(
-    signed_in: TestClient,
-    migrated_sessions: sessionmaker[Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with migrated_sessions() as session, session.begin():
-        acme = _company(session, "Acme")
-        job_id = _job(
-            session,
-            acme,
-            "Engineer",
-            inbox_type="ignored",
-            location_city="Austin",
-            location_country="US",
-            description="Build APIs.",
-            evaluation_error="LlmError: model unavailable",
-        ).id
-        applied_id = _job(session, acme, "Applied role", inbox_type="applied").id
-
-    outcomes: list[JobEvaluation | Exception] = []
-    subjects: list[JobForEvaluation] = []
-
-    def fake_evaluate(_session: Session, subject: JobForEvaluation, _prefs: Any) -> JobEvaluation:
-        subjects.append(subject)
-        outcome = outcomes.pop(0)
-        if isinstance(outcome, Exception):
-            raise outcome
-        return outcome
-
-    monkeypatch.setattr("src.api.v1.jobs.evaluate_job", fake_evaluate)
-    strong = JobEvaluation(
-        overall_score=91,
-        experience_score=80,
-        skill_score=85,
-        industry_exp_score=70,
-        work_arrangement="remote",
-    )
-
-    outcomes.append(strong)
-    success = signed_in.post(f"/api/v1/jobs/{job_id}/re-evaluate")
-    assert success.status_code == 200
-    body = success.json()
-    assert (body["overall_score"], body["skill_score"], body["industry_exp_score"]) == (91, 85, 70)
-    assert body["work_arrangement"] == "remote"
-    assert body["evaluation_error"] is None
-    assert body["inbox_type"] == "recommended"
-    assert subjects[0] == JobForEvaluation(
-        title="Engineer", company="Acme", location="Austin, US", description="Build APIs."
-    )
-
-    outcomes.append(LlmOutputError("invalid JSON after retry"))
-    failure = signed_in.post(f"/api/v1/jobs/{job_id}/re-evaluate")
-    assert failure.status_code == 200
-    body = failure.json()
-    assert body["evaluation_error"] == "LlmOutputError: invalid JSON after retry"
-    assert body["overall_score"] is None and body["experience_score"] is None
-    assert body["inbox_type"] == "recommended"
-
-    outcomes.append(strong.model_copy(update={"overall_score": 10}))
-    kept = signed_in.post(f"/api/v1/jobs/{applied_id}/re-evaluate")
-    assert kept.json()["inbox_type"] == "applied" and kept.json()["overall_score"] == 10
-
-
 def test_company_create_validates_input_and_update_replaces_fields(
     signed_in: TestClient,
 ) -> None:
@@ -287,7 +225,7 @@ def test_delete_company_is_blocked_by_jobs_and_otherwise_removes_its_contacts(
 ) -> None:
     with migrated_sessions() as session, session.begin():
         hiring = _company(session, "Hiring Co")
-        _job(session, hiring, "Engineer")
+        _job(session, hiring, "Engineer", inbox_type="recommended")
         quiet = _company(session, "Quiet Co")
         session.add(CompanyNetworking(company_id=quiet.id, first_name="Grace"))
         hiring_id, quiet_id = hiring.id, quiet.id
@@ -323,19 +261,79 @@ def test_job_pages_with_tied_sort_keys_never_repeat_or_skip_rows(
 ) -> None:
     with migrated_sessions() as session, session.begin():
         acme = _company(session, "Acme")
-        # Every job shares one discovered_when, and liked ties within each group, so only the
-        # id tie-breaker keeps the order stable across page boundaries.
+        # Every job entered the inbox at the same moment, so only the id tie-breaker keeps the
+        # order stable across page boundaries.
         jobs = [
-            _job(session, acme, f"Role {n}", inbox_type="recommended", liked=n % 3 == 0)
+            _job(session, acme, f"Role {n}", inbox_type="ignored", inbox_entered_at=NOW)
             for n in range(7)
         ]
-        liked_ids = sorted((job.id for job in jobs if job.liked), reverse=True)
-        other_ids = sorted((job.id for job in jobs if not job.liked), reverse=True)
+        ids = sorted((job.id for job in jobs), reverse=True)
 
-    pages = _walk_pages(signed_in, "/api/v1/jobs", {"inbox": "recommended", "limit": 2})
+    pages = _walk_pages(signed_in, "/api/v1/jobs", {"inbox": "ignored", "limit": 2})
 
     assert [len(page) for page in pages] == [2, 2, 2, 1]
-    assert [job_id for page in pages for job_id in page] == liked_ids + other_ids
+    assert [job_id for page in pages for job_id in page] == ids
+
+
+def test_recommended_feed_adds_newly_scored_jobs_at_the_bottom_then_older_ones(
+    signed_in: TestClient, migrated_sessions: sessionmaker[Session]
+) -> None:
+    with migrated_sessions() as session, session.begin():
+        acme = _company(session, "Acme")
+        for hour in range(5):
+            _job(
+                session,
+                acme,
+                f"Scored {hour}h ago",
+                inbox_type="recommended",
+                inbox_entered_at=NOW - timedelta(hours=hour),
+            )
+        pending_id = _job(session, acme, "Not scored yet", inbox_type="pending").id
+
+    def page(cursor: str | None = None) -> tuple[list[str], str]:
+        params = {"inbox": "recommended", "limit": 2, **({"cursor": cursor} if cursor else {})}
+        response = signed_in.get("/api/v1/jobs", params=params)
+        assert response.status_code == 200, response.json()
+        return [item["title"] for item in response.json()["items"]], response.json()["next_cursor"]
+
+    first, cursor = page()
+    assert first == ["Scored 0h ago", "Scored 1h ago"]
+
+    # Two jobs are scored while the user reads; the next page brings them first, oldest first.
+    with migrated_sessions() as session, session.begin():
+        for minutes in (10, 20):
+            _job(
+                session,
+                acme,
+                f"New +{minutes}m",
+                inbox_type="recommended",
+                inbox_entered_at=NOW + timedelta(minutes=minutes),
+            )
+    added, cursor = page(cursor)
+    assert added == ["New +10m", "New +20m"]
+
+    # Then the older jobs not shown yet, newest first, until they run out.
+    older, cursor = page(cursor)
+    assert older == ["Scored 2h ago", "Scored 3h ago"]
+    last, cursor = page(cursor)
+    assert last == ["Scored 4h ago"]
+    caught_up, cursor = page(cursor)
+    assert caught_up == [] and cursor is not None
+
+    # Asking again later returns jobs scored in the meantime.
+    with migrated_sessions() as session, session.begin():
+        _job(
+            session,
+            acme,
+            "Later",
+            inbox_type="recommended",
+            inbox_entered_at=NOW + timedelta(hours=1),
+        )
+    later, _cursor = page(cursor)
+    assert later == ["Later"]
+
+    # Jobs waiting to be scored are never shown.
+    assert signed_in.get(f"/api/v1/jobs/{pending_id}").status_code == 404
 
 
 def test_company_pages_with_tied_names_and_likes_never_repeat_or_skip_rows(

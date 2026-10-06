@@ -66,6 +66,23 @@ services:
       jobs:
         condition: service_healthy
 
+  # Job scorer: the jobs image running `python -m src.scorer`, which evaluates the jobs the
+  # fetcher saved as pending (backend/jobs/src/scorer.py). Waits for a healthy jobs service.
+  scorer:
+    build: ./backend/jobs
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "src.scorer"]
+    # Jobs being scored when the container stops get time to finish.
+    stop_grace_period: 60s
+    volumes:
+      - ./backend/data/resume:/opt/career_networking/resume
+      - ./backend/data/jobs:/opt/career_networking/jobs
+      - ./backend/logs:/opt/career_networking/logs
+    depends_on:
+      jobs:
+        condition: service_healthy
+
   frontend:
     build: ./frontend
     restart: unless-stopped

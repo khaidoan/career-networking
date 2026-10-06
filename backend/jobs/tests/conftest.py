@@ -182,3 +182,15 @@ def fixture_text(relative_path: str) -> str:
 
 def fixture_json(relative_path: str) -> Any:
     return json.loads(fixture_text(relative_path))
+
+
+@pytest.fixture
+def sessions(alembic_config: Config) -> Iterator[sessionmaker[Session]]:
+    """Sessions on the disposable test Postgres, migrated to head (and back down afterwards)."""
+    command.upgrade(alembic_config, "head")
+    engine = create_engine(get_settings().sqlalchemy_database_url)
+    try:
+        yield sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    finally:
+        engine.dispose()
+        command.downgrade(alembic_config, "base")

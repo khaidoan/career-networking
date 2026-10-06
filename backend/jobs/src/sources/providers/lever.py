@@ -16,6 +16,7 @@ from src.sources.providers.base import (
     Posting,
     company_for,
     from_epoch_millis,
+    page_title,
 )
 
 API_BASE = "https://api.lever.co/v0/postings"
@@ -50,6 +51,10 @@ class LeverProvider(AtsProvider):
         if not isinstance(data, list):
             return []
         return [self._posting(job, board) for job in data if _usable(job)]
+
+    def fetch_company_name(self, board: BoardRef, client: HttpClient) -> str | None:
+        # The postings API has no company name; the hosted board page is titled with it.
+        return page_title(client.get_text(self.board_url(board.board_key)))
 
     def fetch_description(self, url: str, client: HttpClient) -> str | None:
         slug = self.detect_board(url)

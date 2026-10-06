@@ -23,7 +23,7 @@ export const INBOX_EMPTY_STATES: Readonly<
   recommended: {
     title: "No recommended jobs yet",
     message:
-      "Jobs that match your preferences appear here after the daily job search.",
+      "Jobs that match your preferences appear here as they are scored after each job search.",
   },
   applied: {
     title: "No applied jobs yet",

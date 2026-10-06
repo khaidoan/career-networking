@@ -9,14 +9,16 @@ from src.models.ats_board import (
 from src.models.base import Base, TimestampMixin
 from src.models.company import Company
 from src.models.company_networking import CompanyNetworking
-from src.models.job import INBOX_TYPES, Job
+from src.models.job import INBOX_PENDING, INBOX_TYPES, LISTED_INBOXES, Job
 from src.models.preferences import Preferences
 from src.models.prompt import Prompt
 
 __all__ = [
     "DISCOVERED_VIA_ATS_SWEEP",
     "DISCOVERED_VIA_GOOGLE_JOBS",
+    "INBOX_PENDING",
     "INBOX_TYPES",
+    "LISTED_INBOXES",
     "PROVIDERS",
     "AtsBoard",
     "Base",

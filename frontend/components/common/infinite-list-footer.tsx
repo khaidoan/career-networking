@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";
 
 type InfiniteListFooterProps = {
   hasMore: boolean;
+  /** Everything is shown for now, but more may arrive (a feed); offers a check instead. */
+  caughtUp?: boolean;
+  /** Shown while caught up, e.g. "You're all caught up." */
+  caughtUpMessage?: string;
   loadingMore: boolean;
   error: string | null;
   onLoadMore: () => void;
@@ -26,6 +30,8 @@ type InfiniteListFooterProps = {
  */
 export function InfiniteListFooter({
   hasMore,
+  caughtUp = false,
+  caughtUpMessage,
   loadingMore,
   error,
   onLoadMore,
@@ -55,6 +61,11 @@ export function InfiniteListFooter({
   return (
     <div className="flex flex-col items-center gap-2 pt-2">
       <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
+      {caughtUp && !loadingMore && !error && caughtUpMessage && (
+        <p className="text-center text-sm text-muted-foreground">
+          {caughtUpMessage}
+        </p>
+      )}
       {error && <p className="text-sm font-medium text-destructive">{error}</p>}
       <Button
         type="button"
@@ -70,13 +81,15 @@ export function InfiniteListFooter({
         {loadingMore ? (
           <>
             <LoaderCircle aria-hidden="true" className="animate-spin" />
-            Loading more {noun}…
+            {caughtUp ? `Checking for new ${noun}…` : `Loading more ${noun}…`}
           </>
         ) : error ? (
           <>
             <RotateCw aria-hidden="true" />
             Try again
           </>
+        ) : caughtUp ? (
+          `Check for new ${noun}`
         ) : (
           `Load more ${noun}`
         )}

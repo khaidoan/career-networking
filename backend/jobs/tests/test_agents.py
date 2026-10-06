@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.agents.company_lookup import lookup_company
+from src.agents.company_lookup import enrich_company, is_name_only
 from src.agents.evaluator import JobForEvaluation, evaluate_job
 from src.agents.resume_extractor import extract_resume_suggestions, strip_seniority
 from src.models import Company, Preferences
@@ -99,12 +99,13 @@ def test_evaluator_context_excludes_address_gender_and_other_eeo_answers(
     assert "Ten years building Python services." in sent
 
 
-def test_company_lookup_drops_non_http_urls_and_keeps_the_given_name(
+def test_company_lookup_drops_non_http_urls_and_keeps_a_real_name(
     fake_llm: FakeLlm, session: MagicMock
 ) -> None:
     fake_llm.replies = [
         json.dumps(
             {
+                "official_name": "Acme Corporation",
                 "website_url": "javascript:alert(1)",
                 "linkedin_url": "https://www.linkedin.com/company/acme",
                 "description": "Makes anvils.",
@@ -115,16 +116,41 @@ def test_company_lookup_drops_non_http_urls_and_keeps_the_given_name(
             }
         )
     ]
+    company = Company(name="ACME inc.")
 
-    company = lookup_company(session, "ACME inc.", "We build anvils.")
+    enrich_company(session, company, "We build anvils.")
 
-    assert isinstance(company, Company)
+    # A real name is kept even when the model spells it differently.
     assert company.name == "ACME inc."
     assert company.website_url is None
     assert company.linkedin_url == "https://www.linkedin.com/company/acme"
     assert company.industries == ["Manufacturing"]
     assert company.employee_estimate is None
-    session.add.assert_called_once_with(company)
+    assert not is_name_only(company)
+
+
+@pytest.mark.parametrize(
+    ("saved_name", "official_name", "expected"),
+    [
+        ("capitalone", "Capital One", "Capital One"),
+        ("hims-and-hers", "Hims & Hers", "Hims & Hers"),
+        ("capitalone", None, "capitalone"),
+        ("Stripe", "Stripe, Inc.", "Stripe"),
+    ],
+)
+def test_company_lookup_replaces_only_a_slug_name_with_the_official_name(
+    fake_llm: FakeLlm,
+    session: MagicMock,
+    saved_name: str,
+    official_name: str | None,
+    expected: str,
+) -> None:
+    fake_llm.replies = [json.dumps({"official_name": official_name, "description": "A company."})]
+    company = Company(name=saved_name)
+
+    enrich_company(session, company)
+
+    assert company.name == expected
 
 
 def test_resume_extractor_trims_and_deduplicates_suggestions(

@@ -112,7 +112,11 @@ export function jobListQuery(
   return query;
 }
 
-/** One page of an inbox, liked first then newest. */
+/**
+ * One page of an inbox, newest arrival first. For Recommended (a feed) `next_cursor` never
+ * runs out: later pages bring newly scored jobs, then older ones, then nothing until more are
+ * scored.
+ */
 export async function listJobs(
   inbox: InboxType,
   filters: JobFilters,
@@ -150,18 +154,6 @@ export async function setJobLiked(
 export async function applyToJob(jobId: number): Promise<JobResult> {
   return jobResult(
     await requestJson<JobDetail>(`${JOBS_API}/${jobId}/apply`, {
-      method: "POST",
-    }),
-  );
-}
-
-/**
- * Evaluate the job again against the current preferences. A failed evaluation still succeeds
- * here: the returned job then has `evaluation_error` set and no scores.
- */
-export async function reEvaluateJob(jobId: number): Promise<JobResult> {
-  return jobResult(
-    await requestJson<JobDetail>(`${JOBS_API}/${jobId}/re-evaluate`, {
       method: "POST",
     }),
   );

@@ -48,7 +48,7 @@ class JobDetail(JobCard):
 
 
 class JobPatch(BaseModel):
-    """Only ``liked`` is editable; inbox changes come from the fetcher, Apply and Re-evaluate."""
+    """Only ``liked`` is editable; inbox changes come from the scorer and Apply."""
 
     model_config = ConfigDict(extra="forbid")
 

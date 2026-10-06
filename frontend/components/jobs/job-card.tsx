@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import Link from "next/link";
 import {
   Banknote,
@@ -20,7 +20,6 @@ import {
   NotScoredBadge,
   VisaIndicator,
 } from "@/components/jobs/match-indicators";
-import { ReEvaluateButton } from "@/components/jobs/re-evaluate-button";
 import { Card } from "@/components/ui/card";
 import { useOptimisticLike } from "@/hooks/use-optimistic-like";
 import { setJobLiked, type JobCard as JobCardData } from "@/lib/api/jobs";
@@ -87,7 +86,7 @@ function jobDetails(job: JobCardData): Detail[] {
 
 /**
  * One job in an inbox list (render inside a `ul`). The whole card opens Job Details through the
- * title link; the like and Re-evaluate buttons sit above that link. Unknown values are hidden.
+ * title link; the like button sits above that link. Unknown values are hidden.
  */
 export function JobCard({
   job,
@@ -109,26 +108,6 @@ export function JobCard({
     save,
     onSaved,
   });
-  const titleRef = useRef<HTMLAnchorElement>(null);
-  const restoreFocus = useRef(false);
-  const handleEvaluated = useCallback(
-    (updated: JobCardData) => {
-      // A successful re-evaluation removes the Re-evaluate button that had focus.
-      restoreFocus.current = !updated.evaluation_error;
-      onChange(updated);
-    },
-    [onChange],
-  );
-  useEffect(() => {
-    if (!restoreFocus.current || job.evaluation_error) {
-      return;
-    }
-    restoreFocus.current = false;
-    // Only recover focus that was lost; never pull it away from somewhere the user moved to.
-    if (!document.activeElement || document.activeElement === document.body) {
-      titleRef.current?.focus();
-    }
-  }, [job.evaluation_error]);
   const details = [
     ...(compact ? [] : companyDetails(job)),
     ...jobDetails(job),
@@ -144,7 +123,6 @@ export function JobCard({
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <Heading className="text-lg leading-snug font-semibold text-foreground">
               <Link
-                ref={titleRef}
                 href={`/jobs/${job.id}`}
                 className="rounded-sm underline-offset-4 after:absolute after:inset-0 after:rounded-xl hover:underline"
               >
@@ -194,19 +172,12 @@ export function JobCard({
         )}
 
         {job.evaluation_error && (
-          <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">
-                Why it was not scored:{" "}
-              </span>
-              {job.evaluation_error}
-            </p>
-            <ReEvaluateButton
-              job={job}
-              onEvaluated={handleEvaluated}
-              className="relative z-10 self-start sm:self-auto"
-            />
-          </div>
+          <p className="border-t pt-4 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Why it was not scored:{" "}
+            </span>
+            {job.evaluation_error}
+          </p>
         )}
       </Card>
     </li>

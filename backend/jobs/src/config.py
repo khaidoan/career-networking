@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     llm_api_base: str | None = None
 
     match_threshold: int = Field(default=70, ge=0, le=100)
+    # How many pending jobs the scorer evaluates at once; keep within the LLM provider's limits.
+    scorer_concurrency: int = Field(default=4, ge=1, le=12)
     google_jobs_interval_hours: int = Field(default=24, gt=0)
     serpapi_api_key: SecretStr | None = Field(default=None, validation_alias="SERPAPI_API_KEY")
 

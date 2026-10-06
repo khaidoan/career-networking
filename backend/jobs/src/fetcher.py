@@ -1,14 +1,15 @@
-"""One fetcher run: discover jobs, track ATS boards, dedup, evaluate and ingest.
+"""One fetcher run: discover jobs, track ATS boards, dedup and save new jobs for scoring.
 
 Every run first deletes ignored jobs older than ``IGNORED_JOB_RETENTION``. Then, in order:
 Google Jobs search (when enabled and due; its boards are tracked right away) -> full ATS sweep
 -> polling of tracked boards the sweep did not cover -> ingestion of the Google Jobs postings
 -> pruning. Google postings are ingested last so a job the ATS sources already found is not
-evaluated a second time. Each source and each job is isolated, so a failure is logged and the
-run continues. A Postgres advisory lock keeps two runs from overlapping.
+saved (and scored) a second time. Each source and each job is isolated, so a failure is logged
+and the run continues. A Postgres advisory lock keeps two runs from overlapping.
 
-LLM tokens are spent only on postings that pass the free filters (title, seniority, country,
-7-day recency) and both duplicate checks; the company lookup runs only for recommended jobs.
+The fetcher spends no LLM tokens: new jobs are saved in the "pending" inbox, with the company by
+name only, and the scorer (``src.scorer``) evaluates them. Only postings that pass the free
+filters (title, seniority, country, 48-hour recency) and both duplicate checks are saved.
 
 The ``fetcher`` compose service runs this once when the container starts, and its scheduler
 calls ``python -m src.fetcher --if-due`` every few minutes, which runs only at the daily time
@@ -33,26 +34,20 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.agents.company_lookup import enrich_company, is_name_only, lookup_company
-from src.agents.evaluator import JobForEvaluation, evaluate_job
 from src.config import Settings, SettingsError, get_settings
 from src.db.session import get_engine, get_sessionmaker
 from src.logging_config import FETCHER_LOG_FILE_NAME, configure_logging
 from src.models import (
     DISCOVERED_VIA_ATS_SWEEP,
     DISCOVERED_VIA_GOOGLE_JOBS,
+    INBOX_PENDING,
     AtsBoard,
     Company,
     Job,
     Preferences,
 )
 from src.schedule import is_due, missing_for_fetching
-from src.services.evaluation import (
-    INBOX_IGNORED,
-    INBOX_RECOMMENDED,
-    apply_evaluation_failure,
-    apply_evaluation_success,
-)
+from src.services.evaluation import INBOX_IGNORED
 from src.sources.ats_sweep import run_sweep_batch
 from src.sources.boards import BoardScan, scan_board
 from src.sources.filters import (
@@ -77,7 +72,7 @@ ADVISORY_LOCK_KEY = 0x636E5F6665746368
 # Active boards whose last match is older than this stop being polled until rediscovered.
 BOARD_PRUNE_AFTER = timedelta(days=30)
 # Ignored jobs discovered longer ago than this are deleted. Postings are only ingested while
-# under 7 days old, so a deleted job cannot come back through the same posting.
+# under 48 hours old, so a deleted job cannot come back through the same posting.
 IGNORED_JOB_RETENTION = timedelta(days=7)
 TRACKED_POLL_CONCURRENCY = 8
 # How far back a Google posting is compared against ATS jobs for the cross-source duplicate check.
@@ -148,10 +143,8 @@ class RunSummary:
     sources: dict[str, SourceStats] = field(
         default_factory=lambda: {source: SourceStats() for source in SOURCES}
     )
-    evaluated: int = 0
-    evaluation_failed: int = 0
-    recommended: int = 0
-    ignored: int = 0
+    # New jobs saved in the pending inbox for the scorer.
+    queued: int = 0
     boards_pruned: int = 0
     ignored_jobs_deleted: int = 0
     duration_seconds: float = 0.0
@@ -160,8 +153,7 @@ class RunSummary:
         per_source = "; ".join(f"{name} {stats.describe()}" for name, stats in self.sources.items())
         return (
             f"Fetcher run finished in {self.duration_seconds:.1f}s: {per_source}; "
-            f"evaluated={self.evaluated} evaluation_failed={self.evaluation_failed} "
-            f"recommended={self.recommended} ignored={self.ignored} "
+            f"queued_for_scoring={self.queued} "
             f"boards_pruned={self.boards_pruned} ignored_jobs_deleted={self.ignored_jobs_deleted}"
         )
 
@@ -367,18 +359,23 @@ class FetcherRun:
 
     def ats_sweep(self) -> None:
         stats = self.summary.sources[SOURCE_ATS_SWEEP]
-        result = run_sweep_batch(self.criteria, self.client, self.state, self.now)
+
+        # Each board's matches are saved as soon as it is scanned, so the scorer can start on
+        # them while the sweep runs and an interrupted run keeps what it found.
+        def save(scan: BoardScan) -> None:
+            self.scanned_boards.add(_board_identity(scan.board))
+            upsert_boards(
+                self.session_factory, [scan.board], DISCOVERED_VIA_ATS_SWEEP, self.now, polled=True
+            )
+            stats.matched += len(scan.matches)
+            self._remember_ats(scan.matches)
+            self.ingest(scan.matches, stats)
+
+        result = run_sweep_batch(self.criteria, self.client, self.state, self.now, on_matched=save)
         if result.skipped:
             return
         stats.fetched = result.postings_fetched
         stats.failed += result.boards_failed
-        boards = [scan.board for scan in result.matched_boards]
-        self.scanned_boards.update(_board_identity(board) for board in boards)
-        upsert_boards(self.session_factory, boards, DISCOVERED_VIA_ATS_SWEEP, self.now, polled=True)
-        postings = [posting for scan in result.matched_boards for posting in scan.matches]
-        stats.matched = len(postings)
-        self._remember_ats(postings)
-        self.ingest(postings, stats)
 
     def tracked_boards(self) -> None:
         stats = self.summary.sources[SOURCE_TRACKED_BOARDS]
@@ -475,26 +472,18 @@ class FetcherRun:
                 logger.exception("Could not ingest %r from %s", posting.title, posting.source)
 
     def ingest_one(self, url: str, posting: Posting, stats: SourceStats) -> None:
-        """Evaluation, company and job insert for one new posting, in one transaction.
-
-        The job is evaluated first so the company lookup (more tokens) only runs when the job is
-        recommended; companies of ignored jobs are saved by name and enriched if a later job of
-        theirs is recommended.
-        """
+        """Save one new posting as a pending job (company by name only) for the scorer."""
         job = Job(
             title=posting.title.strip(),
             url=url,
             description=posting.description,
             source=posting.source,
+            posting_location=posting.location or None,
+            inbox_type=INBOX_PENDING,
         )
         try:
             with self.session_factory() as session, session.begin():
-                evaluated = self._evaluate(session, job, posting)
-                inbox = job.inbox_type
-                company = find_or_create_company(
-                    session, posting, look_up=inbox == INBOX_RECOMMENDED
-                )
-                job.company_id = company.id
+                job.company_id = find_or_create_company(session, posting).id
                 session.add(job)
         except IntegrityError as error:
             if _constraint_name(error) != JOB_URL_CONSTRAINT:
@@ -502,35 +491,8 @@ class FetcherRun:
             logger.info("Job at %s was inserted concurrently; skipping", url)
             stats.duplicate += 1
             return
-
         stats.new += 1
-        if evaluated:
-            self.summary.evaluated += 1
-        else:
-            self.summary.evaluation_failed += 1
-        if inbox == INBOX_RECOMMENDED:
-            self.summary.recommended += 1
-        else:
-            self.summary.ignored += 1
-
-    def _evaluate(self, session: Session, job: Job, posting: Posting) -> bool:
-        """Fill the job's scores, extracted fields and inbox; ``False`` when evaluation failed."""
-        subject = JobForEvaluation(
-            title=job.title,
-            company=posting.company,
-            location=posting.location or None,
-            description=posting.description,
-        )
-        try:
-            evaluation = evaluate_job(session, subject, self.preferences)
-        except Exception as error:
-            apply_evaluation_failure(job, error)
-            return False
-        # A new job has no inbox yet, so it is always placed by its score.
-        apply_evaluation_success(
-            job, evaluation, self.settings.match_threshold, allow_inbox_move=True
-        )
-        return True
+        self.summary.queued += 1
 
 
 def company_key(name: str) -> str:
@@ -543,11 +505,10 @@ def title_key(title: str) -> str:
     return " ".join(re.findall(r"[a-z0-9+#]+", title.casefold()))
 
 
-def find_or_create_company(session: Session, posting: Posting, *, look_up: bool) -> Company:
-    """Case-insensitive exact name match, else a new company.
+def find_or_create_company(session: Session, posting: Posting) -> Company:
+    """Case-insensitive exact name match, else a new company saved by name (no tokens spent).
 
-    With ``look_up`` (the job is recommended) a new company is filled by the lookup agent and a
-    name-only one is enriched; otherwise no tokens are spent and a new company is saved by name.
+    The scorer fills in a name-only company when one of its jobs is recommended.
     """
     name = posting.company.strip()
     if not name:
@@ -559,21 +520,7 @@ def find_or_create_company(session: Session, posting: Posting, *, look_up: bool)
         .limit(1)
     ).first()
     if company is not None:
-        if look_up and is_name_only(company):
-            try:
-                with session.begin_nested():
-                    enrich_company(session, company, posting.description)
-            except Exception as error:
-                logger.warning(
-                    "Company lookup failed for %r; keeping the name only: %s", name, error
-                )
         return company
-    if look_up:
-        try:
-            with session.begin_nested():
-                return lookup_company(session, name, posting.description)
-        except Exception as error:
-            logger.warning("Company lookup failed for %r; saving the name only: %s", name, error)
     company = Company(name=name)
     session.add(company)
     session.flush()

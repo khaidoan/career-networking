@@ -32,7 +32,7 @@ from src.api.v1.schemas.contacts import ContactRead, ContactSearchResult, Contac
 from src.api.v1.schemas.job_card import JobCard
 from src.config import Settings
 from src.llm import LlmError
-from src.models import Company, CompanyNetworking, Job, Preferences
+from src.models import INBOX_PENDING, Company, CompanyNetworking, Job, Preferences
 from src.services.contacts import (
     CompanyNotFoundError,
     contact_search_availability,
@@ -75,7 +75,12 @@ def _company_sort_values(row: Row[Any]) -> list[object]:
 
 
 def _job_count(company_id: int) -> Any:
-    return select(func.count(Job.id)).where(Job.company_id == company_id).scalar_subquery()
+    # Pending jobs are not scored yet and are shown nowhere, so they are not counted either.
+    return (
+        select(func.count(Job.id))
+        .where(Job.company_id == company_id, Job.inbox_type != INBOX_PENDING)
+        .scalar_subquery()
+    )
 
 
 @router.get("")
@@ -138,7 +143,11 @@ def _contact_search(session: Session, settings: Settings, company: Company) -> C
 def _to_detail(
     session: Session, settings: Settings, company: Company, job_count: int
 ) -> CompanyDetail:
-    jobs = sorted(company.jobs, key=lambda job: (job.discovered_when, job.id), reverse=True)
+    jobs = sorted(
+        (job for job in company.jobs if job.inbox_type != INBOX_PENDING),
+        key=lambda job: (job.discovered_when, job.id),
+        reverse=True,
+    )
     contacts = sorted(company.networking_contacts, key=lambda contact: contact.id)
     return CompanyDetail(
         **CompanyRead.from_model(company).model_dump(),
@@ -217,7 +226,7 @@ def delete_company(company_id: int, session: DbSession) -> Response:
 def _requested_job(session: Session, company: Company, job_id: int) -> Job:
     """The given job; 404 when unknown, 422 when it belongs to another company."""
     job = session.get(Job, job_id)
-    if job is None:
+    if job is None or job.inbox_type == INBOX_PENDING:
         raise HTTPException(status.HTTP_404_NOT_FOUND, JOB_NOT_FOUND)
     if job.company_id != company.id:
         raise RequestValidationError(

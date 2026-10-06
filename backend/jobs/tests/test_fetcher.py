@@ -4,21 +4,18 @@ The database tests need CAREER_NETWORKING_TEST_DATABASE_URL (see test_migrations
 """
 
 import logging
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from pydantic import SecretStr
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from src import fetcher
+from src import fetcher, scorer
 from src.agents.evaluator import JobEvaluation, JobForEvaluation
-from src.config import Settings, get_settings
-from src.llm import LlmError, LlmOutputError
+from src.config import Settings
+from src.llm import LlmError
 from src.models import AtsBoard, Company, Job, Preferences
 from src.services import evaluation
 from src.sources.ats_sweep import SweepResult
@@ -59,17 +56,6 @@ def _evaluation(score: int) -> JobEvaluation:
     )
 
 
-@pytest.fixture
-def sessions(alembic_config: Config) -> Iterator[sessionmaker[Session]]:
-    command.upgrade(alembic_config, "head")
-    engine = create_engine(get_settings().sqlalchemy_database_url)
-    try:
-        yield sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    finally:
-        engine.dispose()
-        command.downgrade(alembic_config, "base")
-
-
 class FakeSources:
     """Records what the fetcher asks of the mocked sources and agents."""
 
@@ -79,7 +65,6 @@ class FakeSources:
         self.tracked: dict[str, list[Posting] | Exception] = {}
         self.scores: dict[str, int | Exception] = {}
         self.polled: list[str] = []
-        self.looked_up: list[str] = []
         self.enriched: list[str] = []
         self.recovered: list[str] = []
         self.evaluated: list[JobForEvaluation] = []
@@ -87,9 +72,9 @@ class FakeSources:
         monkeypatch.setattr(fetcher, "run_sweep_batch", self._sweep)
         monkeypatch.setattr(fetcher, "scan_board", self._scan)
         monkeypatch.setattr(fetcher, "recover_full_description", self._recover)
-        monkeypatch.setattr(fetcher, "lookup_company", self._lookup)
-        monkeypatch.setattr(fetcher, "enrich_company", self._enrich)
-        monkeypatch.setattr(fetcher, "evaluate_job", self._evaluate)
+        # Scoring and the company fill-in happen in the scorer, after the fetcher saved the jobs.
+        monkeypatch.setattr(scorer, "enrich_company", self._enrich)
+        monkeypatch.setattr(scorer, "evaluate_job", self._evaluate)
 
     @staticmethod
     def _result(value: Any) -> Any:
@@ -100,8 +85,12 @@ class FakeSources:
     def _google(self, *_args: Any) -> GoogleJobsResult | None:
         return self._result(self.google)
 
-    def _sweep(self, *_args: Any) -> SweepResult:
-        return self._result(self.sweep)
+    def _sweep(self, *_args: Any, on_matched: Any = None) -> SweepResult:
+        result = self._result(self.sweep)
+        # Like the real sweep, hand over each matched board as it is scanned.
+        for scan in result.matched_boards if on_matched else []:
+            on_matched(scan)
+        return result
 
     def _scan(self, board: BoardRef, *_args: Any) -> BoardScan:
         self.polled.append(board.board_key)
@@ -110,10 +99,6 @@ class FakeSources:
 
     def _recover(self, posting: Posting, _client: Any) -> None:
         self.recovered.append(posting.url)
-
-    def _lookup(self, _session: Session, name: str, _description: str | None = None) -> Company:
-        self.looked_up.append(name)
-        raise LlmError("model unavailable")
 
     def _enrich(self, _session: Session, company: Company, _description: str | None = None) -> None:
         self.enriched.append(company.name)
@@ -149,7 +134,7 @@ def _run(
     )
 
 
-def test_run_dedups_urls_matches_companies_and_routes_jobs_by_score(
+def test_run_dedups_urls_and_matches_companies_then_the_scorer_routes_jobs_by_score(
     test_settings: Settings,
     sessions: sessionmaker[Session],
     sources: FakeSources,
@@ -209,6 +194,18 @@ def test_run_dedups_urls_matches_companies_and_routes_jobs_by_score(
 
     summary = _run(test_settings, sessions, fake_http)
 
+    # The fetcher saves new jobs unscored, with companies by name only, and spends no tokens.
+    with sessions() as session:
+        pending = session.scalars(select(Job).where(Job.inbox_type == "pending")).all()
+    assert sorted(job.title for job in pending) == [
+        "Backend Engineer II",
+        "Senior Backend Engineer",
+    ]
+    assert sources.evaluated == [] and sources.enriched == []
+    assert summary.queued == 2
+
+    scorer.score_batch(test_settings, sessions)
+
     with sessions() as session:
         jobs = {job.title: job for job in session.scalars(select(Job).where(Job.id > 0))}
         companies = {company.name: company for company in session.scalars(select(Company))}
@@ -231,15 +228,15 @@ def test_run_dedups_urls_matches_companies_and_routes_jobs_by_score(
     assert ignored.company_id == companies["Globex"].id
     assert companies["Globex"].website_url is None
     # No tokens on the company of an ignored job; the recommended job enriches its bare company.
-    assert sources.looked_up == []
     assert sources.enriched == ["Acme Corp"]
     assert companies["Acme Corp"].description == "Acme Corp makes things."
     assert sources.recovered == []
-    # ATS postings (sweep, then tracked boards) are evaluated before Google postings.
-    assert [job.title for job in sources.evaluated] == [
+    assert sorted(job.title for job in sources.evaluated) == [
         "Backend Engineer II",
         "Senior Backend Engineer",
     ]
+    # The raw posting location goes to the evaluator.
+    assert {job.location for job in sources.evaluated} == {"Remote, US"}
 
     assert boards["acme"].discovered_via == "google_jobs"
     assert boards["acme"].company_name == "Acme Corp"
@@ -255,32 +252,6 @@ def test_run_dedups_urls_matches_companies_and_routes_jobs_by_score(
         1,
         0,
     )
-    assert (summary.evaluated, summary.recommended, summary.ignored) == (2, 1, 1)
-
-
-def test_failed_evaluation_saves_the_job_unscored_in_the_ignored_inbox(
-    test_settings: Settings,
-    sessions: sessionmaker[Session],
-    sources: FakeSources,
-    fake_http: FakeHttp,
-) -> None:
-    _save_preferences(sessions, desired_titles=["Backend Engineer"], country="US")
-    job = _posting("Backend Engineer", "Initech", "https://jobs.lever.co/initech/1", "lever")
-    sources.sweep = SweepResult(
-        boards_scanned=1,
-        matched_boards=[BoardScan(board=BoardRef("lever", "initech"), fetched=1, matches=[job])],
-    )
-    sources.scores = {"Backend Engineer": LlmOutputError("invalid JSON after retry")}
-
-    summary = _run(test_settings, sessions, fake_http)
-
-    with sessions() as session:
-        saved = session.scalars(select(Job)).one()
-    assert saved.inbox_type == evaluation.EVALUATION_FAILURE_INBOX == "ignored"
-    assert saved.overall_score is None
-    assert saved.skill_score is None
-    assert saved.evaluation_error == "LlmOutputError: invalid JSON after retry"
-    assert (summary.evaluated, summary.evaluation_failed, summary.ignored) == (0, 1, 1)
 
 
 def test_evaluation_error_is_one_line_and_capped() -> None:
@@ -292,7 +263,7 @@ def test_evaluation_error_is_one_line_and_capped() -> None:
     assert evaluation.describe_evaluation_error(TimeoutError()) == "TimeoutError"
 
 
-def test_google_jobs_postings_older_than_seven_days_or_undated_are_not_processed(
+def test_google_jobs_postings_older_than_48_hours_or_undated_are_not_processed(
     test_settings: Settings,
     sessions: sessionmaker[Session],
     sources: FakeSources,
@@ -305,7 +276,7 @@ def test_google_jobs_postings_older_than_seven_days_or_undated_are_not_processed
     stale = _posting(
         "Backend Engineer", "Initech", "https://example.com/jobs/2", "google_jobs:Indeed"
     )
-    stale.published_at = NOW - timedelta(days=8)
+    stale.published_at = NOW - timedelta(hours=49)
     undated = _posting(
         "Backend Engineer", "Initech", "https://example.com/jobs/3", "google_jobs:Indeed"
     )
@@ -501,21 +472,16 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
                 last_matched_at=NOW - timedelta(days=40),
             )
         )
-    looked_up: list[str] = []
-
-    def failing_lookup(_session: Session, name: str, _description: str | None = None) -> Company:
-        looked_up.append(name)
-        raise LlmError("model unavailable")
+    enriched: list[str] = []
 
     def failing_enrich(
         _session: Session, company: Company, _description: str | None = None
     ) -> None:
-        looked_up.append(f"enrich {company.name}")
+        enriched.append(company.name)
         raise LlmError("model unavailable")
 
-    monkeypatch.setattr(fetcher, "lookup_company", failing_lookup)
-    monkeypatch.setattr(fetcher, "enrich_company", failing_enrich)
-    monkeypatch.setattr(fetcher, "evaluate_job", lambda *_args: _evaluation(80))
+    monkeypatch.setattr(scorer, "enrich_company", failing_enrich)
+    monkeypatch.setattr(scorer, "evaluate_job", lambda *_args: _evaluation(80))
 
     greenhouse_jobs = fixture_json("ats/greenhouse.json")
     fake_http.add(
@@ -554,6 +520,7 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
         client_factory=fake_http.client,
         now=NOW + timedelta(hours=1),
     )
+    scorer.score_batch(test_settings, sessions)
 
     with sessions() as session:
         boards = {board.board_key: board for board in session.scalars(select(AtsBoard))}
@@ -599,9 +566,9 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
     assert (
         tracked_job.company_id == jobs["https://job-boards.greenhouse.io/acme/jobs/101"].company_id
     )
-    # Both jobs are recommended, so both new companies are looked up (and fail, leaving names);
-    # run 2's recommended job 106 then retries the still name-only Acme Corp.
-    assert looked_up == ["Acme Corp", "Globex", "enrich Acme Corp"]
+    # All three jobs are recommended, so the scorer tries to fill in each one's name-only company
+    # (the lookups fail, leaving the names).
+    assert sorted(enriched) == ["Acme Corp", "Acme Corp", "Globex"]
 
 
 def test_ignored_jobs_older_than_seven_days_are_deleted_even_when_discovery_is_paused(
@@ -689,8 +656,8 @@ def test_google_postings_get_the_free_filters_and_skip_jobs_an_ats_board_already
     with sessions() as session:
         urls = set(session.scalars(select(Job.url)))
     assert urls == {ats_job.url, new_job.url}
-    # Two evaluations: the ATS job and the one genuinely new Google job.
-    assert len(sources.evaluated) == 2
+    # Two jobs saved for scoring: the ATS job and the one genuinely new Google job.
+    assert summary.queued == 2
     google_stats = summary.sources["google_jobs"]
     assert (google_stats.fetched, google_stats.matched) == (5, 2)
     assert (google_stats.new, google_stats.duplicate) == (1, 1)

@@ -5,7 +5,7 @@ import { buildConnectionMessage, CONNECTION_MESSAGE_TEMPLATE } from "./message";
 describe("buildConnectionMessage", () => {
   it("keeps the approved template word for word", () => {
     expect(CONNECTION_MESSAGE_TEMPLATE).toBe(
-      "Hello {first_name}, I came across a job posting for {job_title} at your current company, {company_name}. Can you help me with a mock interview? If your company has a referral program, you may be able to earn the referral. Otherwise, you may enjoy getting to know me. Thank you!",
+      "Hello {first_name}, I came across a job posting for {job_title} at your current company, {company_name}. Can you help me with a mock interview? If your company has a referral program, you may be able to earn the referral. Otherwise, you may enjoy helping a human being. Thank you!",
     );
   });
 
@@ -17,7 +17,7 @@ describe("buildConnectionMessage", () => {
         companyName: "Acme Corp  ",
       }),
     ).toBe(
-      "Hello Jane, I came across a job posting for Senior Backend Engineer at your current company, Acme Corp. Can you help me with a mock interview? If your company has a referral program, you may be able to earn the referral. Otherwise, you may enjoy getting to know me. Thank you!",
+      "Hello Jane, I came across a job posting for Senior Backend Engineer at your current company, Acme Corp. Can you help me with a mock interview? If your company has a referral program, you may be able to earn the referral. Otherwise, you may enjoy helping a human being. Thank you!",
     );
   });
 

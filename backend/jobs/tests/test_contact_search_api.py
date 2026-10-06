@@ -112,7 +112,12 @@ def _seed(sessions: sessionmaker[Session], **inboxes: str) -> dict[str, int]:
             session.add(job)
             session.flush()
             ids[title] = job.id
-        globex_job = Job(company_id=globex.id, title="Other", url="https://jobs.example/other")
+        globex_job = Job(
+            company_id=globex.id,
+            title="Other",
+            url="https://jobs.example/other",
+            inbox_type="recommended",
+        )
         sent = CompanyNetworking(
             company_id=acme.id,
             first_name="Ada",
@@ -148,7 +153,7 @@ def test_success_stores_contacts_keeps_sent_history_and_returns_counts_and_statu
     assert response.status_code == 200, response.json()
     body = response.json()
     assert (body["found"], body["created"], body["updated"]) == (2, 1, 1)
-    assert fake_http.requests[0].url.params["q"] == 'site:linkedin.com/in "Acme" "Newest"'
+    assert fake_http.requests[0].url.params["q"] == 'site:linkedin.com/in "Acme" Newest'
     ada, grace = body["contacts"]
     assert ada["id"] == ids["sent"] and ada["title"] == "Principal Engineer"
     assert ada["connection_request_sent"] is True
@@ -176,7 +181,7 @@ def test_job_id_supplies_the_role_even_for_an_ignored_job_at_an_eligible_company
     )
 
     assert response.status_code == 200, response.json()
-    assert fake_http.requests[0].url.params["q"] == 'site:linkedin.com/in "Acme" "Skipped"'
+    assert fake_http.requests[0].url.params["q"] == 'site:linkedin.com/in "Acme" Skipped'
     assert (response.json()["found"], response.json()["created"]) == (0, 0)
     assert fake_llm.requests == []
     assert response.json()["contact_search"]["last_searched_at"] is not None

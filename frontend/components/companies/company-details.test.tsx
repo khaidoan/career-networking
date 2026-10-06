@@ -71,7 +71,9 @@ describe("CompanyDetails", () => {
       await screen.findByRole("heading", { level: 1, name: "Acme" }),
     ).toBeInTheDocument();
     const page = screen.getByRole("link", { name: /LinkedIn page/ });
-    const people = screen.getByRole("link", { name: /People on LinkedIn/ });
+    const people = screen.getByRole("link", {
+      name: /Browse on LinkedIn/,
+    });
     expect(page).toHaveAttribute("href", COMPANY.linkedin_url);
     expect(people).toHaveAttribute(
       "href",
@@ -171,9 +173,8 @@ describe("CompanyDetails", () => {
       "/api/v1/companies/3/contacts/search",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(screen.queryByText("Not searched yet")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /People on LinkedIn/ }),
+      screen.getByRole("link", { name: /Browse on LinkedIn/ }),
     ).toBeVisible();
   });
 

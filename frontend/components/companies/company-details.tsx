@@ -168,7 +168,7 @@ function CompanyHeader({
               LinkedIn page
             </ExternalLinkButton>
             <ExternalLinkButton href={linkedInPeopleUrl(company.linkedin_url)}>
-              People on LinkedIn
+              Browse on LinkedIn
             </ExternalLinkButton>
           </>
         )}
@@ -399,7 +399,7 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
           <DetailSection
             id="contacts"
             title="Contacts"
-            description="People at this company who could help with a mock interview or a referral."
+            description="Find peopless at this company who could help with a mock interview or a referral."
             icon={UsersRound}
           >
             <FindContactsButton
@@ -411,7 +411,6 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
               contacts={company.contacts}
               companyName={company.name}
               jobTitle={latestJobTitle}
-              contactSearch={company.contact_search}
             />
           </DetailSection>
         </div>

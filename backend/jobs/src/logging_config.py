@@ -1,7 +1,8 @@
 """Process-wide logging: stdout plus a daily-rotated log file kept for ``LOG_RETENTION_DAYS``.
 
 Each process writes its own file (the API to ``career_networking.log``, the fetcher to
-``fetcher.log``) because two processes cannot safely rotate the same file.
+``fetcher.log``, the scorer to ``scorer.log``) because two processes cannot safely rotate the same
+file.
 """
 
 import logging
@@ -11,6 +12,7 @@ from pathlib import Path
 
 LOG_FILE_NAME = "career_networking.log"
 FETCHER_LOG_FILE_NAME = "fetcher.log"
+SCORER_LOG_FILE_NAME = "scorer.log"
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 # The current file plus this many days minus one of rotated files; nothing older is kept.
 LOG_RETENTION_DAYS = 3
@@ -61,7 +63,7 @@ def remove_expired_logs(log_folder: Path, now: float | None = None) -> int:
     """
     cutoff = (now if now is not None else time.time()) - LOG_RETENTION_DAYS * 86400
     removed = 0
-    for base in (LOG_FILE_NAME, FETCHER_LOG_FILE_NAME):
+    for base in (LOG_FILE_NAME, FETCHER_LOG_FILE_NAME, SCORER_LOG_FILE_NAME):
         for path in log_folder.glob(f"{base}.*"):
             try:
                 if path.is_file() and path.stat().st_mtime < cutoff:

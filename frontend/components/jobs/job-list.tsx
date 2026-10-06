@@ -35,7 +35,9 @@ function jobCount(count: number) {
 }
 
 /**
- * One inbox: the filter bar plus an infinitely scrolling card list, liked first then newest.
+ * One inbox: the filter bar plus an infinitely scrolling card list, newest arrival first.
+ * Recommended is a feed: reaching the end adds jobs scored since the page was opened, then
+ * older ones; once caught up it checks again when the user scrolls back to the end.
  * Filtering, search and paging happen on the server; the filters live in the URL.
  */
 export function JobList({ inbox }: { inbox: InboxType }) {
@@ -59,7 +61,8 @@ export function JobList({ inbox }: { inbox: InboxType }) {
   const list = useInfiniteList<JobCardData>({
     resetKey: query,
     fetchPage,
-    describeLoaded: (count) => `${jobCount(count)} more loaded`,
+    describeLoaded: (count) =>
+      count === 0 ? "No new jobs yet" : `${jobCount(count)} more loaded`,
     describeResults: (count, hasMore) =>
       count === 0
         ? "No jobs match your filters"
@@ -99,11 +102,20 @@ export function JobList({ inbox }: { inbox: InboxType }) {
             </Button>
           </EmptyState>
         ) : (
-          <EmptyState
-            icon={Inbox}
-            title={empty.title}
-            message={empty.message}
-          />
+          <EmptyState icon={Inbox} title={empty.title} message={empty.message}>
+            {/* A feed can still fill up; with no rows there is nothing to scroll. */}
+            {list.hasMore && (
+              <Button
+                variant="outline"
+                onClick={list.loadMore}
+                aria-disabled={list.loadingMore || undefined}
+              >
+                {list.loadingMore
+                  ? "Checking for new jobs…"
+                  : "Check for new jobs"}
+              </Button>
+            )}
+          </EmptyState>
         ))}
 
       {list.status === "ready" && list.items.length > 0 && (
@@ -124,6 +136,8 @@ export function JobList({ inbox }: { inbox: InboxType }) {
           </ul>
           <InfiniteListFooter
             hasMore={list.hasMore}
+            caughtUp={list.caughtUp}
+            caughtUpMessage="You're all caught up. Newly scored jobs appear here when you scroll back to the bottom."
             loadingMore={list.loadingMore}
             error={list.loadMoreError}
             onLoadMore={list.loadMore}

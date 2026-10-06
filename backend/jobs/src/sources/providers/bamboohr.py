@@ -54,6 +54,14 @@ class BambooHrProvider(AtsProvider):
                 postings.append(self._posting(row, board))
         return postings
 
+    def fetch_company_name(self, board: BoardRef, client: HttpClient) -> str | None:
+        data = client.get_json(f"{_origin(board.board_key)}/careers/company-info")
+        result = data.get("result") if isinstance(data, dict) else None
+        name = result.get("name") if isinstance(result, dict) else None
+        if not isinstance(name, str):
+            return None
+        return " ".join(name.split()) or None
+
     def enrich(self, posting: Posting, client: HttpClient) -> None:
         opening = self._opening(posting.url, client)
         if opening is None:

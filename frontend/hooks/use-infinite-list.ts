@@ -29,6 +29,11 @@ type ListState<T> = {
   attempt: number;
   items: T[];
   nextCursor: string | null;
+  /**
+   * The last page was empty but the list can still grow (a feed such as Recommended). Loading
+   * pauses until the user scrolls back to the end or calls `loadMore`.
+   */
+  caughtUp: boolean;
   error: string | null;
   more: "idle" | "loading" | "error";
   moreError: string | null;
@@ -41,6 +46,7 @@ function emptyPage<T>(): Omit<ListState<T>, "key" | "attempt"> {
   return {
     items: [],
     nextCursor: null,
+    caughtUp: false,
     error: null,
     more: "idle",
     moreError: null,
@@ -56,7 +62,9 @@ function appendUnique<T extends { id: number }>(items: T[], more: T[]): T[] {
 /**
  * Cursor-paged list state for infinite scroll: loads the first page whenever `resetKey` changes,
  * loads the next page when the sentinel nears the viewport or `loadMore` is called (the
- * focusable "Load more" fallback), and announces newly loaded rows.
+ * focusable "Load more" fallback), and announces newly loaded rows. A feed whose cursor never
+ * runs out (Recommended) becomes `caughtUp` after an empty page and checks again when the user
+ * scrolls back to the end.
  */
 export function useInfiniteList<T extends { id: number }>({
   resetKey,
@@ -105,6 +113,7 @@ export function useInfiniteList<T extends { id: number }>({
           ...emptyPage<T>(),
           items: result.items,
           nextCursor: result.nextCursor,
+          caughtUp: result.items.length === 0 && result.nextCursor !== null,
         });
         if (hasLoaded.current) {
           announce(
@@ -166,6 +175,7 @@ export function useInfiniteList<T extends { id: number }>({
         ...list,
         items: appendUnique(list.items, items),
         nextCursor,
+        caughtUp: items.length === 0 && nextCursor !== null,
         more: "idle",
       }));
       announce(describeRef.current.describeLoaded(items.length));
@@ -177,7 +187,9 @@ export function useInfiniteList<T extends { id: number }>({
   }, [announce]);
 
   const itemCount = current?.items.length ?? 0;
-  const autoLoad = current?.more === "idle" && current.nextCursor !== null;
+  const idle = current?.more === "idle" && current.nextCursor !== null;
+  const autoLoad = idle && !current.caughtUp;
+  const waitingForReturn = idle && current.caughtUp;
 
   useEffect(() => {
     if (!sentinel || !autoLoad || typeof IntersectionObserver === "undefined") {
@@ -195,6 +207,31 @@ export function useInfiniteList<T extends { id: number }>({
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [sentinel, autoLoad, itemCount, loadMore]);
+
+  useEffect(() => {
+    if (
+      !sentinel ||
+      !waitingForReturn ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+    // Caught up: check again only when the end of the list comes back into view, never just
+    // because it is still visible, so a user resting at the bottom does not cause a request loop.
+    let visible: boolean | null = null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const nowVisible = entries.some((entry) => entry.isIntersecting);
+        if (visible === false && nowVisible) {
+          void loadMore();
+        }
+        visible = nowVisible;
+      },
+      { rootMargin: SENTINEL_ROOT_MARGIN },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [sentinel, waitingForReturn, loadMore]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -227,6 +264,8 @@ export function useInfiniteList<T extends { id: number }>({
     status: !current ? "loading" : current.error ? "error" : "ready",
     error: current?.error ?? null,
     hasMore: Boolean(current && !current.error && current.nextCursor),
+    /** Everything is shown for now; more may arrive (see `ListState.caughtUp`). */
+    caughtUp: Boolean(current?.caughtUp),
     loadingMore: current?.more === "loading",
     loadMoreError: current?.moreError ?? null,
     loadMore,

@@ -14,6 +14,7 @@ from src.sources.providers.base import (
     HttpClient,
     Posting,
     company_for,
+    page_title,
     parse_iso_datetime,
 )
 
@@ -58,6 +59,10 @@ class AshbyProvider(AtsProvider):
         )
         jobs = data.get("jobs") if isinstance(data, dict) else None
         return [self._posting(job, board) for job in jobs or [] if _usable(job)]
+
+    def fetch_company_name(self, board: BoardRef, client: HttpClient) -> str | None:
+        # The posting API has no company name; the hosted board page is titled "<Name> Jobs".
+        return page_title(client.get_text(self.board_url(board.board_key)), drop_suffix="Jobs")
 
     def fetch_description(self, url: str, client: HttpClient) -> str | None:
         # The public API has no single-posting endpoint; find the posting on its board.

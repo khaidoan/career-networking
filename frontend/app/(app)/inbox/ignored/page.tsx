@@ -8,7 +8,7 @@ export default function IgnoredPage() {
   return (
     <InboxPage
       inbox="ignored"
-      description="Jobs below your match threshold, and jobs that could not be scored."
+      description="Jobs below your match threshold, and jobs that could not be scored, newest first."
     />
   );
 }

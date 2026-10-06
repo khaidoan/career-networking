@@ -163,6 +163,11 @@ describe("JobDetails", () => {
     renderDetails();
 
     const apply = await screen.findByRole("button", { name: "Apply" });
+    // Apply sits at the bottom of the job description; Re-evaluate is gone.
+    const description = screen.getByRole("region", { name: "Job description" });
+    expect(description).toContainElement(apply);
+    expect(description.lastElementChild).toContainElement(apply);
+    expect(screen.queryByRole("button", { name: /Re-evaluat/ })).toBeNull();
     await user.click(apply);
     expect(openMock).toHaveBeenCalledWith(
       JOB.url,
@@ -247,11 +252,21 @@ describe("JobDetails", () => {
     const section = within(
       await screen.findByRole("region", { name: "Networking / Outreach" }),
     );
-    expect(section.getByText("Not searched yet")).toBeVisible();
-    expect(section.getByText(/Select Find contacts/)).toBeVisible();
-    expect(
-      section.getByRole("link", { name: /People on LinkedIn/ }),
-    ).toHaveAttribute("href", "https://www.linkedin.com/company/acme/people/");
+    // No last-search time, and no empty contact list before anyone is imported.
+    expect(section.queryByText(/searched/i)).not.toBeInTheDocument();
+    expect(section.queryByRole("list")).not.toBeInTheDocument();
+    expect(section.queryByText(/on LinkedIn yourself/)).not.toBeInTheDocument();
+    const browse = section.getByRole("link", {
+      name: /^Browse on LinkedIn/,
+    });
+    expect(browse).toHaveAttribute(
+      "href",
+      "https://www.linkedin.com/company/acme/people/",
+    );
+    // Both actions sit in one row.
+    expect(browse.parentElement).toBe(
+      section.getByRole("button", { name: "Find contacts" }).parentElement,
+    );
 
     await user.click(section.getByRole("button", { name: "Find contacts" }));
 
@@ -263,9 +278,8 @@ describe("JobDetails", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(
-      section.getByText("1 hour ago", { selector: "time" }),
-    ).toHaveAttribute("dateTime", searchedAt);
-    expect(section.queryByText("Not searched yet")).not.toBeInTheDocument();
+      section.getByText("Found 1 new contact.", { selector: "p" }),
+    ).toBeVisible();
     expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
       "Found 1 new contact.",
     );

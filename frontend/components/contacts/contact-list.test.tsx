@@ -73,7 +73,7 @@ describe("ContactList", () => {
   beforeEach(() => document.addEventListener("click", blockNavigation));
   afterEach(() => document.removeEventListener("click", blockNavigation));
 
-  it("opens LinkedIn, copies the message and marks the request as sent in one click", async () => {
+  it("opens LinkedIn, copies the message and records the request in one click, without showing a status", async () => {
     const { user, writeText, fetchMock, link } = setup();
 
     expect(link).toHaveAttribute("href", CONTACT.linkedin_url);
@@ -87,10 +87,11 @@ describe("ContactList", () => {
       "/api/v1/contacts/11/connection-request",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(await screen.findByText("Request sent")).toBeInTheDocument();
     expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
       "Message copied",
     );
+    // The request is recorded but its status is not displayed.
+    expect(screen.queryByText(/Request sent/)).not.toBeInTheDocument();
     expect(screen.getByTestId("toasts")).toHaveTextContent("Message copied");
   });
 
@@ -112,51 +113,16 @@ describe("ContactList", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("notes that contacts may be out of date, and prompts a search when empty", () => {
-    const { rerender } = render(
+  it("notes that contacts may be out of date, and shows nothing when there are none", () => {
+    const { container, rerender } = render(
       <ContactList contacts={[CONTACT]} companyName="Acme" jobTitle={null} />,
     );
     expect(
       screen.getByText("Found via search, may be out of date."),
     ).toBeVisible();
 
-    rerender(
-      <ContactList
-        contacts={[]}
-        companyName="Acme"
-        jobTitle={null}
-        contactSearch={{
-          available: true,
-          unavailable_reason: null,
-          last_searched_at: null,
-        }}
-      />,
-    );
-    expect(
-      screen.getByText(
-        "Select Find contacts to look for people at Acme on LinkedIn.",
-      ),
-    ).toBeVisible();
-    expect(
-      screen.queryByText("Found via search, may be out of date."),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/later phase/)).not.toBeInTheDocument();
-
-    rerender(
-      <ContactList
-        contacts={[]}
-        companyName="Acme"
-        jobTitle={null}
-        contactSearch={{
-          available: false,
-          unavailable_reason: "no_eligible_job",
-          last_searched_at: null,
-        }}
-      />,
-    );
-    expect(
-      screen.getByText(/once one of its jobs is recommended or applied to/),
-    ).toBeVisible();
+    rerender(<ContactList contacts={[]} companyName="Acme" jobTitle={null} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("only opens LinkedIn when there is no job to mention", async () => {
@@ -167,6 +133,5 @@ describe("ContactList", () => {
     expect(link).toHaveAttribute("href", CONTACT.linkedin_url);
     expect(writeText).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.queryByText("Request sent")).not.toBeInTheDocument();
   });
 });
