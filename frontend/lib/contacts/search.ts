@@ -13,7 +13,7 @@ export const CONTACT_SEARCH_UNAVAILABLE_MESSAGES: Record<
   no_api_key:
     "Contact search needs a SerpApi key. See Contact search in the README to set one up.",
   no_eligible_job:
-    "Contact search is available for companies with a recommended or applied job.",
+    "Contact search is only available for companies with a recommended or applied job.",
 };
 
 function plural(count: number, word: string): string {

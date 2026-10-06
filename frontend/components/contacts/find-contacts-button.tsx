@@ -100,7 +100,15 @@ export function FindContactsButton({
         )}
       </div>
       {unavailable && (
-        <p id={reasonId} className="text-sm text-muted-foreground">
+        <p
+          id={reasonId}
+          className={cn(
+            "text-sm",
+            reason === "no_eligible_job"
+              ? "font-medium text-destructive"
+              : "text-muted-foreground",
+          )}
+        >
           {reason
             ? CONTACT_SEARCH_UNAVAILABLE_MESSAGES[reason]
             : "Contact search is not available right now."}

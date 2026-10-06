@@ -399,7 +399,7 @@ export function CompanyDetails({ companyId }: { companyId: number }) {
           <DetailSection
             id="contacts"
             title="Contacts"
-            description="Find peopless at this company who could help with a mock interview or a referral."
+            description="Find people at this company who can help with a mock interview or a referral."
             icon={UsersRound}
           >
             <FindContactsButton

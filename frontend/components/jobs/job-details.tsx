@@ -205,7 +205,7 @@ function NetworkingSection({
     <DetailSection
       id="networking"
       title="Networking / Outreach"
-      description="Find people at this company who could help with a mock interview or a referral."
+      description="Find people at this company who can help with a mock interview or a referral."
       icon={UsersRound}
     >
       <FindContactsButton

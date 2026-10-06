@@ -26,7 +26,7 @@ from tests.conftest import TEST_PASSWORD, TEST_USERNAME, FakeHttp, FakeLlm
 API_KEY = "serpapi-secret-key"
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
 SENT_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
-NOT_ELIGIBLE = "Contact search is available for companies with a recommended or applied job."
+NOT_ELIGIBLE = "Contact search is only available for companies with a recommended or applied job."
 NO_KEY = "Contact search needs a SerpApi key. See the README."
 RESULTS = {
     "organic_results": [
