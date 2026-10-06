@@ -1,6 +1,6 @@
 """One fetcher run: discover jobs, track ATS boards, dedup and save new jobs for scoring.
 
-Every run first deletes ignored jobs older than ``IGNORED_JOB_RETENTION``. Then, in order:
+Every run first deletes ignored and pending jobs older than ``JOB_RETENTION``. Then, in order:
 Google Jobs search (when enabled and due; its boards are tracked right away) -> full ATS sweep
 -> polling of tracked boards the sweep did not cover -> ingestion of the Google Jobs postings
 -> pruning. Google postings are ingested last so a job the ATS sources already found is not
@@ -73,7 +73,7 @@ ADVISORY_LOCK_KEY = 0x636E5F6665746368
 BOARD_PRUNE_AFTER = timedelta(days=30)
 # Ignored jobs discovered longer ago than this are deleted. Postings are only ingested while
 # under 48 hours old, so a deleted job cannot come back through the same posting.
-IGNORED_JOB_RETENTION = timedelta(days=7)
+JOB_RETENTION = timedelta(days=7)
 TRACKED_POLL_CONCURRENCY = 8
 # How far back a Google posting is compared against ATS jobs for the cross-source duplicate check.
 CROSS_SOURCE_DEDUP_WINDOW = timedelta(days=30)
@@ -146,7 +146,7 @@ class RunSummary:
     # New jobs saved in the pending inbox for the scorer.
     queued: int = 0
     boards_pruned: int = 0
-    ignored_jobs_deleted: int = 0
+    expired_jobs_deleted: int = 0
     duration_seconds: float = 0.0
 
     def describe(self) -> str:
@@ -154,7 +154,7 @@ class RunSummary:
         return (
             f"Fetcher run finished in {self.duration_seconds:.1f}s: {per_source}; "
             f"queued_for_scoring={self.queued} "
-            f"boards_pruned={self.boards_pruned} ignored_jobs_deleted={self.ignored_jobs_deleted}"
+            f"boards_pruned={self.boards_pruned} expired_jobs_deleted={self.expired_jobs_deleted}"
         )
 
 
@@ -212,9 +212,9 @@ def run_fetch(
 
         # Housekeeping runs even when discovery is paused below.
         try:
-            summary.ignored_jobs_deleted = delete_expired_ignored_jobs(session_factory, now)
+            summary.expired_jobs_deleted = delete_expired_jobs(session_factory, now)
         except Exception:
-            logger.exception("Could not delete expired ignored jobs; continuing")
+            logger.exception("Could not delete expired jobs; continuing")
 
         preferences = load_preferences(session_factory)
         missing = missing_for_fetching(preferences)
@@ -598,17 +598,19 @@ def prune_boards(session_factory: sessionmaker[Session], now: datetime) -> int:
     return pruned
 
 
-def delete_expired_ignored_jobs(session_factory: sessionmaker[Session], now: datetime) -> int:
-    """Delete jobs in the ignored inbox discovered more than ``IGNORED_JOB_RETENTION`` ago."""
-    cutoff = now - IGNORED_JOB_RETENTION
+def delete_expired_jobs(session_factory: sessionmaker[Session], now: datetime) -> int:
+    """Delete ignored and pending jobs discovered more than ``JOB_RETENTION`` ago."""
+    cutoff = now - JOB_RETENTION
     with session_factory() as session, session.begin():
         result = session.execute(
-            delete(Job).where(Job.inbox_type == INBOX_IGNORED, Job.discovered_when < cutoff)
+            delete(Job).where(
+                Job.inbox_type.in_((INBOX_IGNORED, INBOX_PENDING)), Job.discovered_when < cutoff
+            )
         )
     deleted = result.rowcount or 0
     if deleted:
         logger.info(
-            "Deleted %d ignored jobs older than %d days", deleted, IGNORED_JOB_RETENTION.days
+            "Deleted %d ignored or pending jobs older than %d days", deleted, JOB_RETENTION.days
         )
     return deleted
 

@@ -87,22 +87,25 @@ def _job(sessions: sessionmaker[Session], job_id: int) -> Job:
         return job
 
 
-def test_scores_pending_jobs_from_the_last_24_hours_and_deletes_older_ones(
+def test_scores_pending_jobs_posted_in_the_last_24_hours_and_deletes_none(
     test_settings: Settings, sessions: sessionmaker[Session], agents: FakeAgents
 ) -> None:
     good = _add_job(sessions, "Backend Engineer")
     weak = _add_job(sessions, "Data Analyst", company="Globex")
-    stale = _add_job(sessions, "Platform Engineer", discovered=NOW - timedelta(hours=25))
+    # Found just now but posted 23 hours ago: still in the window, so scored.
+    recent = _add_job(sessions, "Platform Engineer", posted_at=NOW - timedelta(hours=23))
+    # Posted 25 hours ago, or (with no posting date) found 25 hours ago: left waiting.
+    old_post = _add_job(sessions, "Security Engineer", posted_at=NOW - timedelta(hours=25))
+    old_find = _add_job(sessions, "Mobile Engineer", discovered=NOW - timedelta(hours=25))
     waiting = _add_job(
         sessions, "Site Reliability Engineer", next_scoring_at=NOW + timedelta(minutes=5)
     )
     applied = _add_job(sessions, "Staff Engineer", inbox_type="applied")
-    agents.scores = {"Backend Engineer": 85, "Data Analyst": 30}
+    agents.scores = {"Backend Engineer": 85, "Data Analyst": 30, "Platform Engineer": 40}
 
     summary = scorer.score_batch(test_settings, sessions, now=NOW)
 
-    assert summary.outcomes == {"recommended": 1, "ignored": 1}
-    assert summary.deleted == 1
+    assert summary.outcomes == {"recommended": 1, "ignored": 2}
     recommended, ignored = _job(sessions, good), _job(sessions, weak)
     assert (recommended.inbox_type, recommended.overall_score) == ("recommended", 85)
     assert (ignored.inbox_type, ignored.overall_score) == ("ignored", 30)
@@ -112,10 +115,10 @@ def test_scores_pending_jobs_from_the_last_24_hours_and_deletes_older_ones(
     # filled in.
     assert {job.location for job in agents.evaluated} == {"Austin, TX"}
     assert agents.enriched == ["Acme Corp"]
-    # Older than 24 hours: deleted unscored. Waiting for a retry, or not pending: untouched.
-    with sessions() as session:
-        assert session.get(Job, stale) is None
-    assert _job(sessions, waiting).inbox_type == "pending"
+    assert _job(sessions, recent).overall_score == 40
+    # Outside the window, waiting for a retry, or not pending: untouched, and nothing is deleted.
+    for job_id in (old_post, old_find, waiting):
+        assert _job(sessions, job_id).inbox_type == "pending"
     assert _job(sessions, applied).inbox_type == "applied"
 
 

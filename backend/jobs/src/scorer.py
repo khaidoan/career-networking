@@ -2,8 +2,10 @@
 
 The ``scorer`` compose service runs ``python -m src.scorer``, which loops until stopped:
 
-- Only jobs discovered in the last ``SCORING_WINDOW`` (24 hours) are scored. Pending jobs older
-  than that are deleted without being scored.
+- Only pending jobs posted in the last ``SCORING_WINDOW`` (24 hours) are scored; a job without a
+  posting date counts from when it was found. The scorer never deletes jobs: older pending jobs
+  wait, unscored, until the fetcher deletes them after 7 days (``JOB_RETENTION`` in
+  ``src.fetcher``).
 - Up to ``CAREER_NETWORKING_SCORER_CONCURRENCY`` jobs are evaluated at once. Each job is locked
   while it is scored (``FOR UPDATE SKIP LOCKED``), so a job is never scored twice.
 - A scored job moves to Recommended or Ignored by ``CAREER_NETWORKING_MATCH_THRESHOLD``; moving
@@ -22,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import FrameType
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.agents.company_lookup import enrich_company, is_name_only
@@ -56,7 +58,6 @@ OUTCOME_SKIPPED = "skipped"
 
 @dataclass
 class BatchSummary:
-    deleted: int = 0
     outcomes: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -65,32 +66,18 @@ class BatchSummary:
 
     def describe(self) -> str:
         counts = " ".join(f"{name}={count}" for name, count in sorted(self.outcomes.items()))
-        return f"Scorer batch: {counts or 'nothing scored'}; stale_pending_deleted={self.deleted}"
-
-
-def delete_stale_pending(session_factory: sessionmaker[Session], now: datetime) -> int:
-    """Delete pending jobs discovered more than ``SCORING_WINDOW`` ago; they are never scored."""
-    with session_factory() as session, session.begin():
-        result = session.execute(
-            delete(Job).where(
-                Job.inbox_type == INBOX_PENDING, Job.discovered_when < now - SCORING_WINDOW
-            )
-        )
-    deleted = result.rowcount or 0
-    if deleted:
-        logger.info("Deleted %d pending jobs older than 24 hours without scoring them", deleted)
-    return deleted
+        return f"Scorer batch: {counts or 'nothing scored'}"
 
 
 def due_job_ids(session_factory: sessionmaker[Session], now: datetime, limit: int) -> list[int]:
-    """Pending jobs from the scoring window that are not waiting for a retry, oldest first."""
+    """Pending jobs posted within ``SCORING_WINDOW`` and not waiting for a retry, oldest first."""
     with session_factory() as session:
         return list(
             session.scalars(
                 select(Job.id)
                 .where(
                     Job.inbox_type == INBOX_PENDING,
-                    Job.discovered_when >= now - SCORING_WINDOW,
+                    func.coalesce(Job.posted_at, Job.discovered_when) >= now - SCORING_WINDOW,
                     or_(Job.next_scoring_at.is_(None), Job.next_scoring_at <= now),
                 )
                 .order_by(Job.discovered_when, Job.id)
@@ -163,9 +150,9 @@ def _record_failure(job: Job, error: Exception, now: datetime) -> str:
 def score_batch(
     settings: Settings, session_factory: sessionmaker[Session], now: datetime | None = None
 ) -> BatchSummary:
-    """Delete stale pending jobs, then score up to two rounds of ``scorer_concurrency`` jobs."""
+    """Score up to two rounds of ``scorer_concurrency`` due pending jobs."""
     now = now or datetime.now(UTC)
-    summary = BatchSummary(deleted=delete_stale_pending(session_factory, now))
+    summary = BatchSummary()
     job_ids = due_job_ids(session_factory, now, limit=settings.scorer_concurrency * 2)
     if not job_ids:
         return summary

@@ -39,7 +39,7 @@ def _posting(title: str, company: str, url: str, source: str, **extra: Any) -> P
         url=url,
         source=source,
         location="Remote, US",
-        published_at=NOW - timedelta(days=1),
+        published_at=NOW - timedelta(hours=12),
         description=f"{title} at {company}.",
         **extra,
     )
@@ -206,7 +206,7 @@ def test_run_dedups_urls_and_matches_companies_then_the_scorer_routes_jobs_by_sc
     assert sources.evaluated == [] and sources.enriched == []
     assert summary.queued == 2
 
-    scorer.score_batch(test_settings, sessions)
+    scorer.score_batch(test_settings, sessions, now=NOW)
 
     with sessions() as session:
         jobs = {job.title: job for job in session.scalars(select(Job).where(Job.id > 0))}
@@ -449,7 +449,7 @@ def _serpapi_result(title: str, company: str, via: str, apply_link: str) -> dict
         "location": "Remote, United States",
         "via": via,
         "description": f"{company} is hiring a {title} to build Python services. " * 8,
-        "detected_extensions": {"posted_at": "2 days ago"},
+        "detected_extensions": {"posted_at": "10 hours ago"},
         "apply_options": [{"title": via, "link": apply_link}],
     }
 
@@ -522,7 +522,7 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
         client_factory=fake_http.client,
         now=NOW + timedelta(hours=1),
     )
-    scorer.score_batch(test_settings, sessions)
+    scorer.score_batch(test_settings, sessions, now=NOW)
 
     with sessions() as session:
         boards = {board.board_key: board for board in session.scalars(select(AtsBoard))}
@@ -568,12 +568,14 @@ def test_google_jobs_boards_are_tracked_and_polled_again_on_the_next_run(
     assert (
         tracked_job.company_id == jobs["https://job-boards.greenhouse.io/acme/jobs/101"].company_id
     )
-    # All three jobs are recommended, so the scorer tries to fill in each one's name-only company
-    # (the lookups fail, leaving the names).
-    assert sorted(enriched) == ["Acme Corp", "Acme Corp", "Globex"]
+    # Acme's job 101 was posted 46 hours earlier: saved (under 48 hours) but outside the scorer's
+    # 24-hour window, so it stays pending. The other two are recommended, so the scorer tries to
+    # fill in each one's name-only company (the lookups fail, leaving the names).
+    assert jobs["https://job-boards.greenhouse.io/acme/jobs/101"].inbox_type == "pending"
+    assert sorted(enriched) == ["Acme Corp", "Globex"]
 
 
-def test_ignored_jobs_older_than_seven_days_are_deleted_even_when_discovery_is_paused(
+def test_ignored_and_pending_jobs_older_than_seven_days_are_deleted_even_when_paused(
     test_settings: Settings,
     sessions: sessionmaker[Session],
     sources: FakeSources,
@@ -589,6 +591,8 @@ def test_ignored_jobs_older_than_seven_days_are_deleted_even_when_discovery_is_p
         for slug, inbox, age in [
             ("old-ignored", "ignored", timedelta(days=7, minutes=1)),
             ("new-ignored", "ignored", timedelta(days=6, hours=23)),
+            ("old-pending", "pending", timedelta(days=7, minutes=1)),
+            ("new-pending", "pending", timedelta(days=6, hours=23)),
             ("old-recommended", "recommended", timedelta(days=30)),
             ("old-applied", "applied", timedelta(days=30)),
         ]:
@@ -606,9 +610,9 @@ def test_ignored_jobs_older_than_seven_days_are_deleted_even_when_discovery_is_p
 
     with sessions() as session:
         titles = set(session.scalars(select(Job.title)))
-    assert titles == {"new-ignored", "old-recommended", "old-applied"}
+    assert titles == {"new-ignored", "new-pending", "old-recommended", "old-applied"}
     assert summary.status == fetcher.STATUS_PREFERENCES_INCOMPLETE
-    assert summary.ignored_jobs_deleted == 1
+    assert summary.expired_jobs_deleted == 2
 
 
 def test_google_postings_get_the_free_filters_and_skip_jobs_an_ats_board_already_gave_us(
