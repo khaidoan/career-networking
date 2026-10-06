@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 type PagePlaceholderProps = {
   title: string;
-  message: string;
+  message: ReactNode;
 };
 
 /** Heading plus a one-line empty state, for pages whose content arrives in later phases. */
