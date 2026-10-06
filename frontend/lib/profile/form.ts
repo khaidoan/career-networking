@@ -26,7 +26,7 @@ export type TagField = (typeof TAG_FIELDS)[number];
 export const MAX_TAGS = 50;
 export const MAX_TAG_LENGTH = 100;
 export const MAX_ADDRESS_LENGTH = 1000;
-export const MAX_ADDITIONAL_INFORMATION_LENGTH = 5000;
+export const MAX_ADDITIONAL_INFORMATION_LENGTH = 20000;
 
 /** Server default and format (`src/schedule.py`): "HH:MM", 24-hour. */
 export const DEFAULT_FETCH_TIME = "06:00";

@@ -148,7 +148,7 @@ Help the user prepare tailored application materials and apply manually or semi-
 - Unknown question handling: email user + set inbox_type to `need_attention`
 
 **Data use (decided 2026-10-06)**
-- `preferences.additional_information` is used only by the apply process (filling in application forms). It is never given to the cover letter, cover letter reviewer, resume or resume reviewer agents.
+- `preferences.additional_information` is the user's long-form resume: extra projects, accomplishments and details beyond the uploaded resume, plus application facts such as notice period or relocation plans. It is given to the apply process (filling in application forms) and to the cover letter, cover letter reviewer, resume and resume reviewer agents, alongside the uploaded resume text. The tailored resume must still only state facts found in the uploaded resume or this field.
 
 ---
 

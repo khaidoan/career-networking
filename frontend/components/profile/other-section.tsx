@@ -97,10 +97,12 @@ export function OtherSection({
           id="additional-information-description"
           className="text-sm text-muted-foreground"
         >
-          Anything else to use when filling in application forms, such as your
-          notice period or relocation plans. It is never used to write your
-          resume or cover letter. Unlike the Personal & EEO answers, this may be
-          sent to the AI model.
+          A longer version of your resume: projects, accomplishments and details
+          that did not fit on your uploaded resume, plus anything else for
+          applications, such as your notice period or relocation plans. It is
+          used to fill in application forms and to write your tailored resume
+          and cover letter. Unlike the Personal & EEO answers, this is sent to
+          the AI model.
         </p>
         <Textarea
           id="additional-information"
@@ -108,7 +110,7 @@ export function OtherSection({
           onChange={(event) =>
             onChange({ additionalInformation: event.target.value })
           }
-          rows={4}
+          rows={10}
           maxLength={MAX_ADDITIONAL_INFORMATION_LENGTH}
           aria-invalid={errors.additional_information ? true : undefined}
           aria-describedby={

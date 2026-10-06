@@ -181,7 +181,7 @@ def test_put_rejects_invalid_values_with_field_level_detail(signed_in: TestClien
     response = signed_in.put(
         PREFERENCES_URL,
         json={
-            "additional_information": "x" * 5001,
+            "additional_information": "x" * 20_001,
             "salary_min": 200000,
             "salary_max": 100000,
             "country": "XX",
