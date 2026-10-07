@@ -62,6 +62,7 @@ def test_overridden_agent_uses_its_model_without_the_default_api_base(
     settings = test_settings.model_copy(
         update={
             "llm_api_base": "http://ollama.invalid:11434",
+            "llm_reasoning_effort": "none",
             "llm_model_overrides": {"evaluator": "anthropic/claude-haiku-4-5"},
         }
     )
@@ -73,5 +74,15 @@ def test_overridden_agent_uses_its_model_without_the_default_api_base(
     overridden, default = fake_llm.requests
     assert overridden["model"] == "anthropic/claude-haiku-4-5"
     assert "api_base" not in overridden
+    assert "reasoning_effort" not in overridden
     assert default["model"] == "openai/test-model"
     assert default["api_base"] == "http://ollama.invalid:11434"
+    assert default["reasoning_effort"] == "none"
+
+
+def test_unset_reasoning_effort_is_not_sent(fake_llm: FakeLlm, test_settings: Settings) -> None:
+    fake_llm.replies = ['{"value": 1}']
+
+    complete_structured("You answer.", "Q?", Answer, agent_name="evaluator", settings=test_settings)
+
+    assert "reasoning_effort" not in fake_llm.requests[0]

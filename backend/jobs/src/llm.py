@@ -91,9 +91,13 @@ def complete(messages: list[Message], *, agent_name: str, settings: Settings | N
         # Providers that do not support a parameter (e.g. response_format) silently ignore it.
         "drop_params": True,
     }
-    # The custom API base belongs to the default model; an override may use another provider.
-    if settings.llm_api_base and agent_name not in settings.llm_model_overrides:
-        request["api_base"] = settings.llm_api_base
+    # The custom API base and reasoning effort belong to the default model; an override may use
+    # another provider.
+    if agent_name not in settings.llm_model_overrides:
+        if settings.llm_api_base:
+            request["api_base"] = settings.llm_api_base
+        if settings.llm_reasoning_effort:
+            request["reasoning_effort"] = settings.llm_reasoning_effort
 
     for attempt in range(1, MAX_TRANSIENT_ATTEMPTS + 1):
         started = time.monotonic()

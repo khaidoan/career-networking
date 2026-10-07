@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     llm_model: str = Field(min_length=1)
     # Applies to ``llm_model`` only; an overridden agent uses its provider's default address.
     llm_api_base: str | None = None
+    # LiteLLM ``reasoning_effort`` for ``llm_model`` only; "none" turns off a thinking model's
+    # reasoning (Ollama ``think: false``). Unset leaves the provider's default.
+    llm_reasoning_effort: Literal["none", "low", "medium", "high"] | None = None
     # "agent=model" pairs, comma-separated, e.g. "evaluator=anthropic/claude-haiku-4-5".
     llm_model_overrides: Annotated[dict[str, str], NoDecode] = {}
 
@@ -61,7 +64,7 @@ class Settings(BaseSettings):
             raise ValueError(f"must be at least {MIN_JWT_SECRET_LENGTH} characters")
         return value
 
-    @field_validator("llm_api_base", "serpapi_api_key", mode="before")
+    @field_validator("llm_api_base", "llm_reasoning_effort", "serpapi_api_key", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         # .env.example ships these as empty lines; treat "" as "not configured".

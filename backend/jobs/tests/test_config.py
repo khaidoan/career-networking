@@ -50,6 +50,7 @@ def test_missing_llm_model_fails_fast_naming_the_variable(base_env: pytest.Monke
         ("CAREER_NETWORKING_MATCH_THRESHOLD", "101"),
         ("CAREER_NETWORKING_MATCH_THRESHOLD", "-1"),
         ("CAREER_NETWORKING_GOOGLE_JOBS_INTERVAL_HOURS", "0"),
+        ("CAREER_NETWORKING_LLM_REASONING_EFFORT", "off"),
     ],
 )
 def test_out_of_range_tuning_values_are_rejected(
@@ -69,6 +70,7 @@ def test_defaults_and_unprefixed_serpapi_key(base_env: pytest.MonkeyPatch) -> No
     assert settings.match_threshold == 70
     assert settings.google_jobs_interval_hours == 24
     assert settings.llm_api_base is None
+    assert settings.llm_reasoning_effort is None
     assert isinstance(settings.serpapi_api_key, SecretStr)
     assert settings.serpapi_api_key.get_secret_value() == "serp-secret"
     assert "serp-secret" not in repr(settings)

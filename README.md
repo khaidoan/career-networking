@@ -50,6 +50,7 @@ All AI agents (`resume_extractor`, `evaluator`, `company_lookup`, `networking`) 
 |---|---|---|
 | `CAREER_NETWORKING_LLM_MODEL` | yes | Default LiteLLM model string, `<provider>/<model>` |
 | `CAREER_NETWORKING_LLM_API_BASE` | no | Custom API base URL for the default model (e.g. a local Ollama server); leave empty for the provider default. Overridden agents do not use it |
+| `CAREER_NETWORKING_LLM_REASONING_EFFORT` | no | `none`, `low`, `medium` or `high`, passed to the default model as LiteLLM's `reasoning_effort`; leave empty for the provider default. `none` turns off a thinking model's reasoning (Ollama `think: false`), which makes local models such as `gemma4` many times faster. Overridden agents do not use it |
 | `CAREER_NETWORKING_LLM_MODEL_OVERRIDES` | no | Comma-separated `agent=model` pairs for agents that should not use the default, e.g. `company_lookup=anthropic/claude-sonnet-5`. An unknown agent name or malformed pair stops the service from starting |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` | for that provider | Set the keys that match the models in use. LiteLLM reads them from the environment; they are never logged |
 | `CAREER_NETWORKING_MATCH_THRESHOLD` | no (default 70) | Jobs whose overall match score (0–100) is at least this go to the Recommended inbox; the rest go to Ignored |
@@ -73,6 +74,8 @@ OPENROUTER_API_KEY=sk-or-...
 # Ollama running on the host (no key needed)
 CAREER_NETWORKING_LLM_MODEL=ollama_chat/llama3.1
 CAREER_NETWORKING_LLM_API_BASE=http://host.docker.internal:11434
+# For a thinking model (e.g. gemma4), skip the reasoning step; scoring is much faster
+CAREER_NETWORKING_LLM_REASONING_EFFORT=none
 ```
 
 `host.docker.internal` resolves out of the box on Docker Desktop. On Linux, either add `extra_hosts: ["host.docker.internal:host-gateway"]` to the `jobs` and `fetcher` services, or use the host's IP address instead (for example the Docker bridge address `http://172.17.0.1:11434`, with Ollama listening on that interface).
