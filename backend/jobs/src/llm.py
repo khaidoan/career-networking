@@ -24,7 +24,8 @@ from src.models import Preferences, Prompt
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT_SECONDS = 60
+# Generous so a large local model (e.g. Ollama on CPU) can finish a long job posting.
+REQUEST_TIMEOUT_SECONDS = 300
 # Transport attempts per completion (first try included) for transient provider errors.
 MAX_TRANSIENT_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 1.0

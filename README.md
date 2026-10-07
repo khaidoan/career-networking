@@ -71,7 +71,7 @@ CAREER_NETWORKING_LLM_MODEL=openrouter/meta-llama/llama-3.1-70b-instruct
 OPENROUTER_API_KEY=sk-or-...
 
 # Ollama running on the host (no key needed)
-CAREER_NETWORKING_LLM_MODEL=ollama/llama3.1
+CAREER_NETWORKING_LLM_MODEL=ollama_chat/llama3.1
 CAREER_NETWORKING_LLM_API_BASE=http://host.docker.internal:11434
 ```
 
