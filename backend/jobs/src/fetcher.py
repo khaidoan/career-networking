@@ -81,7 +81,7 @@ BOARD_PRUNE_AFTER = timedelta(days=30)
 JOB_RETENTION = timedelta(days=7)
 TRACKED_POLL_CONCURRENCY = 8
 # New jobs saved by a run that starts with no jobs at all; each one costs a scoring call.
-FIRST_RUN_JOB_LIMIT = 500
+FIRST_RUN_JOB_LIMIT = 100
 # How far back a Google posting is compared against ATS jobs for the cross-source duplicate check.
 CROSS_SOURCE_DEDUP_WINDOW = timedelta(days=30)
 # Legal-form words ignored when comparing company names ("Acme Corp" matches board slug "acme").
